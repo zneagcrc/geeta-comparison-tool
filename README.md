@@ -15,8 +15,45 @@ adapter per test (see "Writing a calculator plug-in").
 
 ## Requirements
 
-Node.js 22 or later. Python 3 for the optional diagnostic tools. Claude Code (or another coding agent) for
-explanations.
+Node.js 22 or later. For the LLM steps (writing adapters, explaining differences): an Anthropic API key, or a Claude
+Code sign-in; `init` installs Claude Code in the workspace. Python 3 for the optional diagnostic tools.
+
+## Quick start
+
+From an empty folder to explained differences. Each step links to its section below.
+
+1. **Install and set up the workspace** ("Setting up a workspace"):
+   ```sh
+   npm init -y
+   npm install github:zneagcrc/geeta-comparison-tool#v<version>
+   npx geeta-compare init
+   npm install
+   npm run geeta:fetch                # the GEETA test set
+   ```
+2. **Define your calculator** in `geeta.config.json` ("Adding a calculator"):
+   ```json
+   "calculators": { "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" } }
+   ```
+3. **Install it:** `npx geeta-compare install mycalc`. Check `geeta.lock.json` shows the version you meant (npm's
+   `latest` is the newest *stable* release; use a tag such as `beta`, or an exact version, otherwise).
+4. **To use an LLM, add its key** ("Using an LLM"): copy `.env.example` to `.env`, set `ANTHROPIC_API_KEY=...`, and run
+   `npx geeta-compare llm` (it checks the key and the model, using no tokens).
+5. **See which tests need an adapter:** `npx geeta-compare test` lists them. Start with a small one, e.g. `Fuel`.
+6. **Write the adapter**, one test at a time, either way ("Developing adapters"):
+   - **With the LLM:** `npx geeta-compare llm adapter Fuel`. Claude Code writes the adapter in
+     `calculators/mycalc/`, proposes its mapping decisions in `calculators/mycalc/mapping.json` (as `"proposed"`), runs
+     the test and reports what it mapped and left out. The run is billed to your key.
+   - **Yourself:** follow "Developing adapters", step by step, and
+     [docs/mapping-decisions.md](docs/mapping-decisions.md).
+7. **Review the mapping:** `npx geeta-compare mapping` lists open decisions and the LLM's proposals. Keep each
+   proposal (`"by": "provider"`), change it, or remove it; edit the adapter code as you like. Then
+   `npm run docs:scenarios` and check each scenario's mapping table ("Not used by" inputs should all be deliberate).
+   A wrong mapping looks exactly like a calculator defect, so review before explaining.
+8. **Compare:** `npm run test:veerg` (deterministic, no LLM).
+9. **Explain the differences:** `npx geeta-compare llm explain Fuel` ("Explanations"), then review the findings
+   document (`findings/mycalc.md`).
+
+Repeat 5 to 9 for the next test. `npx geeta-compare mapping --check` and `npm run test:veerg` in CI keep it honest.
 
 ## Setting up a workspace
 
@@ -74,8 +111,9 @@ npx geeta-compare install mycalc     # or with no id: every calculator in geeta.
 
 `install` resolves the version (what `latest` means today), installs that release, and records the exact version in
 `geeta.lock.json` (commit it: it says what your results were compared against). The first time, it also creates the
-plug-in `calculators/mycalc/index.ts` and the findings document `findings/mycalc.md`. Write the plug-in's adapters
-("Writing a calculator plug-in"), then `npm run typecheck` and `npm run test:veerg`.
+plug-in `calculators/mycalc/index.ts`, its `mapping.json`, and the findings document `findings/mycalc.md`. Then write
+the plug-in's adapters, one test at a time: have the LLM write a first version (`npx geeta-compare llm adapter <Test>`,
+"Using an LLM") or write them yourself ("Developing adapters"), then `npm run typecheck` and `npm run test:veerg`.
 
 To upgrade, run `install` again: a `latest` calculator moves to the newest release (`upgraded from 1.2.3`), or change
 `version` first. The recorded version is part of every explanation's evidence, so explanations written against the
