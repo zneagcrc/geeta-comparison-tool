@@ -53,7 +53,7 @@ const main = async () => {
   }
   const calc = calculator();
   if (command === "adapter") {
-    process.exitCode = runAgent(
+    process.exitCode = await runAgent(
       `Write the adapter for the GEETA test ${target} in the ${calc.name} plug-in (calculator "${calc.id}"), following "Writing an adapter" in CLAUDE.md. ` +
         `Propose your mapping decisions in mapping.json as "proposed"; never change a "provider" decision. Finish with the report CLAUDE.md asks for.`,
     );
@@ -72,7 +72,7 @@ const main = async () => {
       console.error("The bundle command didn't say where it wrote the bundle.");
       process.exit(1);
     }
-    process.exitCode = runAgent(`Explain the differences in ${file}, following "Explaining differences" in CLAUDE.md (calculator "${calc.id}").`);
+    process.exitCode = await runAgent(`Explain the differences in ${file}, following "Explaining differences" in CLAUDE.md (calculator "${calc.id}").`);
     return;
   }
   console.error(`Unknown: geeta-compare llm ${command} (use: llm, llm adapter <Test>, llm explain <Test>)`);

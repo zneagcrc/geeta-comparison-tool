@@ -91,10 +91,26 @@ const status = (only?: string) => {
 const describeCheck = (c: CheckSpec | undefined) =>
   !c ? "none" : c.kind === "reproduces" ? `reproduces (${c.what})` : c.kind === "ratio" ? `ratio (${Object.keys(c.factors).join(" or ")})` : `bound ${c.lo}–${c.hi} (${c.what})`;
 
+/**
+ * The file that defines an adapter: <adapterDir>/<function name>.ts if there is one, else the first .ts file in the
+ * adapter folder (searched recursively) that declares a function or constant of that name, e.g. `const fuel`.
+ */
+const findAdapterSource = (name: string): string => {
+  const dir = path.join(ROOT, calc.adapterDir);
+  const conventional = path.join(dir, `${name}.ts`);
+  if (!name || fs.existsSync(conventional)) return conventional;
+  const declares = new RegExp(`\\b(?:const|let|var|function)\\s+${name.replace(/[$]/g, "\\$")}\\b`);
+  const walk = (d: string): string[] =>
+    fs.existsSync(d)
+      ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(d, e.name))) : e.name.endsWith(".ts") ? [path.join(d, e.name)] : []))
+      : [];
+  return walk(dir).find((f) => declares.test(fs.readFileSync(f, "utf8"))) ?? conventional;
+};
+
 /** Source files worth reading for a test: its adapter (and local helpers), the calculator files it uses, the .xlf equations. */
 const sources = (test: string) => {
   const adapterName = adapters[test].name;
-  const adapterFile = path.join(ROOT, calc.adapterDir, `${adapterName}.ts`);
+  const adapterFile = findAdapterSource(adapterName);
   const files = new Set<string>([adapterFile]);
   const used = new Set<string>();
   const scan = (file: string) => {

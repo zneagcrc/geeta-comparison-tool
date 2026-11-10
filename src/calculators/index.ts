@@ -1,14 +1,14 @@
 // Calculator registry: the calculators listed in the workspace's geeta.config.json ("calculators", see config.ts).
-// Every command compares one calculator with GEETA, chosen with `--calculator <id>` (anywhere on the command line,
-// removed from process.argv before the command reads its own arguments), CALCULATOR=<id>, the config's "calculator",
-// or the only one listed.
+// Every command compares one calculator with GEETA, chosen with `--calculator <name or id>` (anywhere on the command
+// line, removed from process.argv before the command reads its own arguments), CALCULATOR=<name or id>, the config's
+// "calculator", or the only one listed.
 import fs from "node:fs";
 import path from "node:path";
 import type { Calculator, CalculatorPlugin } from "./types";
 import { inWorkspace, workspaceConfig } from "../workspace";
-import { calculatorEntry, lockedVersion } from "./config";
+import { calculatorEntry, definedCalculators, lockedVersion, resolveCalculatorId } from "./config";
 
-export const calculatorIds = Object.keys(workspaceConfig().calculators ?? {});
+export const calculatorIds = definedCalculators().map((c) => c.id);
 
 const fromArgv = () => {
   const i = process.argv.findIndex((a) => a === "--calculator" || a.startsWith("--calculator="));
@@ -16,11 +16,12 @@ const fromArgv = () => {
   const [flag, value] = process.argv[i].split("=");
   const id = value ?? process.argv[i + 1];
   process.argv.splice(i, value === undefined ? 2 : 1);
-  if (flag !== "--calculator" || !id) throw new Error("Usage: --calculator <id>");
+  if (flag !== "--calculator" || !id) throw new Error("Usage: --calculator <name or id>");
   return id;
 };
 
-const selectedId = fromArgv() ?? process.env.CALCULATOR ?? workspaceConfig().calculator ?? (calculatorIds.length === 1 ? calculatorIds[0] : undefined);
+const named = fromArgv() ?? process.env.CALCULATOR ?? workspaceConfig().calculator;
+const selectedId = named !== undefined ? (resolveCalculatorId(named) ?? named) : calculatorIds.length === 1 ? calculatorIds[0] : undefined;
 let selected: Calculator | undefined;
 
 const fail = (message: string): never => {

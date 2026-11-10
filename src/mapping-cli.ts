@@ -63,14 +63,19 @@ const geetaOptions = (ref: string): string[] | undefined => {
     const dir = path.join(GEETA.dir, "InputFields");
     return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"))) : [];
   })();
-  const [table, column] = ref.split(".");
+  // A field whose options depend on another (DependentOn, e.g. the fuel types for one fuel use) takes the parent value in
+  // brackets: "Table_Input_Fuel.FuelType[Generators]". Without one, the options of every parent value are checked.
+  const m = ref.match(/^(.*?)(?:\[(.+)\])?$/)!;
+  const [table, column] = m[1].split(".");
+  const parent = m[2];
+  const options = (field: any) => (parent !== undefined ? (field?.DependentOn ? field.Options?.[parent] : undefined) : field?.Options);
   const found = new Set<string>();
   for (const doc of inputFields) {
-    if (!column) for (const c of doc.InputCells ?? []) if (c.CellName === table) flatten(c.Options).forEach((o) => found.add(o));
+    if (!column) for (const c of doc.InputCells ?? []) if (c.CellName === table) flatten(options(c)).forEach((o) => found.add(o));
     if (column)
       for (const t of doc.InputTables ?? [])
         if (t.TableName === table)
-          for (const part of [t.Rows, t.Cols]) for (const fields of Object.values<any>(part ?? {})) flatten(fields?.[column]?.Options).forEach((o) => found.add(o));
+          for (const part of [t.Rows, t.Cols]) for (const fields of Object.values<any>(part ?? {})) flatten(options(fields?.[column])).forEach((o) => found.add(o));
   }
   return found.size ? [...found] : undefined;
 };

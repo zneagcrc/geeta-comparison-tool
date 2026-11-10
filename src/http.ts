@@ -2,7 +2,7 @@
 // apiClient(id) is the client for a calculator released as an API (geeta.config.json "release": "http(s)://...").
 //
 //   import { apiClient } from "geeta-comparison-tool/src/http";
-//   const api = apiClient("mycalc");
+//   const api = apiClient("acme");   // the calculator's id
 //   const adapter: Adapter = (input) => {
 //     const response = api.post("enterprise-croppinggrains", toApiInput(input));   // <release URL>/<endpoint>
 //     return toGeetaResults(response);
@@ -10,7 +10,7 @@
 //   const plugin: CalculatorPlugin = { adapters, captureInputs: api.captureInputs };   // requests shown in the docs
 import { execFileSync } from "node:child_process";
 import type { InputCall } from "./calculators/types";
-import { calculatorEntry } from "./calculators/config";
+import { calculatorEntry, resolveCalculatorId } from "./calculators/config";
 
 export type HttpResponse = { status: number; json?: any; text: string };
 
@@ -74,7 +74,8 @@ export type ApiClient = {
 };
 
 /** The client for calculator `id`, released as an API ("release": "http(s)://..." in geeta.config.json). */
-export const apiClient = (id: string): ApiClient => {
+export const apiClient = (nameOrId: string): ApiClient => {
+  const id = resolveCalculatorId(nameOrId) ?? nameOrId;
   const entry = calculatorEntry(id);
   if (entry.kind !== "api") throw new Error(`${id} isn't released as an API (its release is ${entry.release ?? "not set"})`);
   const url = entry.apiUrl!;

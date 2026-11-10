@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { PACKAGE_ROOT, WORKSPACE, inWorkspace, workspaceConfig } from "./workspace";
-import { type LockEntry, type ResolvedEntry, calculatorEntry, readLock, writeLock } from "./calculators/config";
+import { type LockEntry, type ResolvedEntry, calculatorEntry, definedCalculators, readLock, resolveCalculatorId, writeLock } from "./calculators/config";
 import { apiKey, requestJsonSync } from "./http";
 
 /** OpenAPI documents found while installing, by calculator id (recorded in the lock). */
@@ -129,11 +129,12 @@ const scaffold = (e: ResolvedEntry) => {
 };
 
 const main = async () => {
-  const defined = Object.keys(workspaceConfig().calculators ?? {});
-  const ids = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const defined = definedCalculators().map((c) => c.id);
+  const named = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const ids = named.map((n) => resolveCalculatorId(n) ?? n);
   if (!defined.length)
     fail(
-      'No calculators in geeta.config.json yet. Add one, e.g.\n  "calculators": { "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" } }\nthen run: npx geeta-compare install mycalc',
+      'No calculators in geeta.config.json yet. Add one, e.g.\n  "calculators": [ { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" } ]\nthen run: npx geeta-compare install Acme',
     );
   for (const id of ids) if (!defined.includes(id)) fail(`geeta.config.json has no calculator "${id}" (it has: ${defined.join(", ")})`);
 

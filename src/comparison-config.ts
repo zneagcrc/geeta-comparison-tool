@@ -1,13 +1,14 @@
 // Scenarios left out of the comparison (comparison.config.json at the project root). An excluded scenario isn't run
 // through the calculator, explained or documented: the runner, `explain` and the scenario docs skip it, and the findings
 // document lists it with its reason. The neutral tools still cover it. Rules:
-//   { "test": "ManureManagement.Pigs", "scenario": "Default scenario", "calculators": ["mycalc"], "reason": "..." }
+//   { "test": "ManureManagement.Pigs", "scenario": "Default scenario", "calculators": ["Acme"], "reason": "..." }   (names or ids)
 // `test` and `scenario` are exact names with * as a wildcard; no `scenario` excludes the whole test (the only way for a
 // test without named scenarios); no `calculators` applies to every calculator. `reason` is required.
 import fs from "node:fs";
 import path from "node:path";
 import { calculator } from "./calculators";
 import { inWorkspace } from "./workspace";
+import { idOf } from "./calculators/config";
 import { findTest, loadCases } from "./fixtures";
 
 export type ExclusionRule = { test: string; scenario?: string; calculators?: string[]; reason: string };
@@ -31,7 +32,7 @@ const loadRules = () => {
 export const exclusion = (test: string, scenario: string | undefined): ExclusionRule | undefined =>
   loadRules().find(
     (r) =>
-      (!r.calculators || r.calculators.includes(calculator().id)) &&
+      (!r.calculators || r.calculators.some((c) => c === calculator().id || idOf(c) === calculator().id)) &&
       r.testRe.test(test) &&
       (!r.scenarioRe || r.scenarioRe.test(scenario ?? "")),
   );
@@ -55,7 +56,7 @@ export const exclusions = (tests: string[]) => {
       used.add(r);
     }
   }
-  const unmatched = loadRules().filter((r) => (!r.calculators || r.calculators.includes(calculator().id)) && !used.has(r));
+  const unmatched = loadRules().filter((r) => (!r.calculators || r.calculators.some((c) => c === calculator().id || idOf(c) === calculator().id)) && !used.has(r));
   return { matched, unmatched };
 };
 

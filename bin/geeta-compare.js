@@ -10,6 +10,7 @@ const COMMANDS = {
   install: ["src/install.ts", "Install the calculators defined in geeta.config.json (all, or the ids named) and record their versions"],
   fetch: ["src/geeta-fetch.ts", "Download the GEETA release pinned in geeta.config.json (or the one named)"],
   test: ["src/run-veerg-tests.ts", "Compare the calculator with GEETA: every test, or the tests and scenarios named"],
+  names: ["src/names-cli.ts", "The GEETA result names of a test, without their values (for writing adapters)"],
   docs: ["src/docs/export.ts", "Write the scenario docs (HTML and Markdown) to the calculator's docsDir"],
   explain: ["src/explain/cli.ts", "Explanations: status, bundle, history, add (see README.md)"],
   neutral: ["src/neutral/cli.ts", "Neutral scenario format: check, export, to-veerg, run"],

@@ -32,16 +32,16 @@ From an empty folder to explained differences. Each step links to its section be
    ```
 2. **Define your calculator** in `geeta.config.json` ("Adding a calculator"):
    ```json
-   "calculators": { "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" } }
+   "calculators": [ { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" } ]
    ```
-3. **Install it:** `npx geeta-compare install mycalc`. Check `geeta.lock.json` shows the version you meant (npm's
+3. **Install it:** `npx geeta-compare install Acme`. Check `geeta.lock.json` shows the version you meant (npm's
    `latest` is the newest *stable* release; use a tag such as `beta`, or an exact version, otherwise).
 4. **To use an LLM, add its key** ("Using an LLM"): copy `.env.example` to `.env`, set `ANTHROPIC_API_KEY=...`, and run
    `npx geeta-compare llm` (it checks the key and the model, using no tokens).
 5. **See which tests need an adapter:** `npx geeta-compare test` lists them. Start with a small one, e.g. `Fuel`.
 6. **Write the adapter**, one test at a time, either way ("Developing adapters"):
    - **With the LLM:** `npx geeta-compare llm adapter Fuel`. Claude Code writes the adapter in
-     `calculators/mycalc/`, proposes its mapping decisions in `calculators/mycalc/mapping.json` (as `"proposed"`), runs
+     `calculators/acme/`, proposes its mapping decisions in `calculators/acme/mapping.json` (as `"proposed"`), runs
      the test and reports what it mapped and left out. The run is billed to your key.
    - **Yourself:** follow "Developing adapters", step by step, and
      [docs/mapping-decisions.md](docs/mapping-decisions.md).
@@ -51,7 +51,7 @@ From an empty folder to explained differences. Each step links to its section be
    A wrong mapping looks exactly like a calculator defect, so review before explaining.
 8. **Compare:** `npm run test:veerg` (deterministic, no LLM).
 9. **Explain the differences:** `npx geeta-compare llm explain Fuel` ("Explanations"), then review the findings
-   document (`findings/mycalc.md`).
+   document (`findings/acme.md`).
 
 Repeat 5 to 9 for the next test. `npx geeta-compare mapping --check` and `npm run test:veerg` in CI keep it honest.
 
@@ -89,11 +89,16 @@ which version to use.
 {
   "repo": "zneagcrc/GEETA",
   "release": "VEERG_0.0.0.3",
-  "calculators": {
-    "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" }
-  }
+  "calculators": [
+    { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" }
+  ]
 }
 ```
+
+`"calculators"` is a list: each calculator is known by its `name`. Its id, which names its folders
+(`calculators/<id>/`, `findings/<id>.md`, `explanations/<id>/`, `docs/<id>/`), is made from the name: lower case, with
+anything but letters and digits as a dash ("Acme" → `acme`, "Method workbench" → `method-workbench`). Give an entry an
+`"id"` to choose it yourself. Commands take the name or the id (`install Acme`, `--calculator "Method workbench"`).
 
 | `release` | What `install` does | `version` |
 |---|---|---|
@@ -106,12 +111,12 @@ which version to use.
 Then install it:
 
 ```sh
-npx geeta-compare install mycalc     # or with no id: every calculator in geeta.config.json
+npx geeta-compare install Acme       # by name or id; with neither, every calculator in geeta.config.json
 ```
 
 `install` resolves the version (what `latest` means today), installs that release, and records the exact version in
 `geeta.lock.json` (commit it: it says what your results were compared against). The first time, it also creates the
-plug-in `calculators/mycalc/index.ts`, its `mapping.json`, and the findings document `findings/mycalc.md`. Then write
+plug-in `calculators/acme/index.ts`, its `mapping.json`, and the findings document `findings/acme.md`. Then write
 the plug-in's adapters, one test at a time: have the LLM write a first version (`npx geeta-compare llm adapter <Test>`,
 "Using an LLM") or write them yourself ("Developing adapters"), then `npm run typecheck` and `npm run test:veerg`.
 
@@ -128,17 +133,17 @@ A calculator that runs as an HTTP API (on a server, or locally) needs nothing in
 release, with `{version}` where the API's version goes, and the name of the environment variable holding its key:
 
 ```json
-"calculators": {
-  "mycalc": {
-    "name": "My Calculator",
+"calculators": [
+  {
+    "name": "Acme API",
     "release": "http://localhost:5180/api/v1/{version}",
     "version": "draft",
-    "apiKeyEnv": "MYCALC_API_KEY"
+    "apiKeyEnv": "ACME_API_KEY"
   }
-}
+]
 ```
 
-Put the key in the workspace's `.env` (`MYCALC_API_KEY=...`; `init` gitignores it), never in `geeta.config.json`. It is
+Put the key in the workspace's `.env` (`ACME_API_KEY=...`; `init` gitignores it), never in `geeta.config.json`. It is
 sent as `Authorization: Bearer <key>`. `install` checks that the API answers and accepts the key, and records the
 API's own version (from `<url>/openapi.json`, `info.version`) and where its OpenAPI document is.
 
@@ -191,8 +196,15 @@ npx geeta-compare llm explain ManureManagement.Pigs   # builds the evidence bund
 The agent is Claude Code, which `init` adds to the workspace as a dev dependency (`@anthropic-ai/claude-code`). It
 runs in the workspace with your model and key, follows the workspace's `CLAUDE.md`, and may only read and edit files
 and run `npx geeta-compare` and `npm run` commands. Each run is billed to the key (or the sign-in) like any other use.
-With `auth: "key"` it runs in Claude Code's `--bare` mode, so it never falls back to a sign-in it finds on the machine.
-You can also open Claude Code in the workspace yourself and ask it the same things.
+
+While it runs, it prints what it is doing (`→ Read calculators/acme/index.ts`, `→ Run: npx geeta-compare test Fuel`,
+what it says between steps, and `… still working (2m 30s)` when it is quiet), then its report, the time taken, the
+cost and the number of turns. A first adapter typically takes several minutes.
+
+With `auth: "key"`, Claude Code gets an empty settings folder of its own and the key through its `apiKeyHelper`
+setting, so it can't fall back to a sign-in it finds on the machine; if it reports any other credential, the run is
+stopped before its first request, and a refused key stops it at once. You can also open Claude Code in the workspace
+yourself and ask it the same things.
 
 ## The GEETA test set
 
@@ -220,7 +232,7 @@ it. First match wins:
 | `GEETA_DIR` (a folder holding `Test/`) | `GEETA_DIR=../GEETA-work npm run test:veerg` |
 | `geeta.local.json` (gitignored; stays until you delete it) | `{ "dir": "../GEETA-work" }`, or `{ "release": "VEERG_0.0.0.4" }` |
 
-Every run says which test set it used (`My Calculator 1.2.0 compared with GEETA VEERG_0.0.0.3`), and so do the scenario
+Every run says which test set it used (`Acme 1.2.0 compared with GEETA VEERG_0.0.0.3`), and so do the scenario
 docs and explanation bundles.
 
 The VEERG methodology documents aren't in the GEETA release. For explanations that cite them, point
@@ -255,8 +267,8 @@ exclusions in your findings document.
 ] }
 ```
 
-`test` and `scenario` are exact names with `*` wildcards; no `scenario` excludes the whole test; `calculators` (a list
-of ids) limits a rule to some calculators; `reason` is required. A rule that matches nothing is reported as a warning.
+`test` and `scenario` are exact names with `*` wildcards; no `scenario` excludes the whole test; `calculators` (names or
+ids) limits a rule to some calculators; `reason` is required. A rule that matches nothing is reported as a warning.
 
 ## Scenario docs (HTML and Markdown)
 
@@ -296,7 +308,7 @@ npm run explain -- add draft.json --force                      # record it even 
 Then run `npx geeta-compare llm explain ManureManagement.Pigs` ("Using an LLM"), which builds the bundle and has
 Claude Code explain it, or ask Claude Code in the workspace yourself:
 
-> explain the differences in explanations/mycalc/requests/ManureManagement.Pigs.md
+> explain the differences in explanations/acme/requests/ManureManagement.Pigs.md
 
 The workspace's `CLAUDE.md` gives it the workflow: start from stored explanations, diagnose what isn't explained
 ([docs/diagnosing.md](docs/diagnosing.md)), give each explanation a numeric check, record it with `explain add`, and
@@ -309,7 +321,7 @@ for `add` looks like this (`add` fills in the id, date and evidence fingerprints
   "section": "7b",
   "type": "Constant convention",
   "scope": { "result": "^VEERG_10_1_8__" },
-  "note": "My Calculator converts carbon to CH4 with 16/12; the workbook uses 1.33 (ratio 1.0025).",
+  "note": "Acme converts carbon to CH4 with 16/12; the workbook uses 1.33 (ratio 1.0025).",
   "sources": ["VEERG Chapter 10, 10.1.8", "calculator/constants.ts"],
   "check": { "kind": "ratio", "factors": { "(16/12) / 1.33": 1.00250626566416 } },
   "model": "claude-opus-5-5"
@@ -392,7 +404,8 @@ const fraction = m.default("purchases[].fractionConsumed");
 - `"to": null` is a decision too: no equivalent, so the input is left out with a note giving your reason.
 - A value or field with **no entry** is a gap: the input is left out with a note, never guessed.
 - `"geeta"` ties a lookup table to its GEETA field (`Table.Column`, or an `X_Cell_...` cell), so every option of that
-  field is checked, not only the ones the test scenarios use.
+  field is checked, not only the ones the test scenarios use. For options that depend on another field (the fuel types
+  of one fuel use), add the parent value: `"Table_Input_Fuel.FuelType[Generators]"`.
 - Decisions with a reason, proposals and defaults print a note in `test`, and every scenario page in the docs lists
   the decisions its adapter used, with who decided each one and why.
 
@@ -412,7 +425,9 @@ Develop one test at a time. Each step below says where to look.
    GEETA inputs (by their workbook labels), the same inputs in the neutral format, and GEETA's expected results.
    `npx geeta-compare neutral export <Test>` writes the neutral scenarios as JSON files (`scenarios/<module>/`), and the
    raw files are in the release (`geeta-releases/<release>/Test/`: `TestInput_*.json`, `TestResults_*.json` for the
-   result names). `npx geeta-compare test` lists the tests that have no adapter yet.
+   result names; `npx geeta-compare names <Test>` lists them without their values). `npx geeta-compare test` lists the
+   tests that have no adapter yet. If you want to map without knowing the expected results (as the LLM does), use the
+   neutral export, the release's `InputFields/` and `names`, and leave the scenario docs until the adapter is written.
 2. **Convert the input to the neutral format.** The adapter receives the workbook's test input, fully resolved (a
    scenario that extends another is already merged with it): input cells (`X_Cell_*`) and tables (`InputTables`). Don't
    read those directly: `moduleFor("<Test>")!.fromVeerg(input)` gives the same scenario as activity data named in the

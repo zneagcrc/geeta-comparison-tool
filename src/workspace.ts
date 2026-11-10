@@ -7,10 +7,10 @@
 //   {
 //     "repo": "zneagcrc/GEETA",                 // where GEETA releases are published
 //     "release": "VEERG_0.0.0.3",               // the release this workspace compares with (npm run geeta:fetch)
-//     "calculators": {                          // the calculators to compare (src/calculators/config.ts)
-//       "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" }
-//     },
-//     "calculator": "mycalc"                    // optional: the default when there are several
+//     "calculators": [                          // the calculators to compare (src/calculators/config.ts)
+//       { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" }
+//     ],
+//     "calculator": "My Calculator"             // optional: the default when there are several (name or id)
 //   }
 import fs from "node:fs";
 import path from "node:path";
@@ -21,7 +21,9 @@ export type WorkspaceConfig = {
   repo: string;
   release: string;
   /** id -> its definition (src/calculators/config.ts); a plain string is just the plug-in path. */
-  calculators?: Record<string, string | { name?: string; release?: string; version?: string; plugin?: string; apiKeyEnv?: string }>;
+  calculators?:
+    | { id?: string; name?: string; release?: string; version?: string; plugin?: string; apiKeyEnv?: string }[]
+    | Record<string, string | { name?: string; release?: string; version?: string; plugin?: string; apiKeyEnv?: string }>;
   calculator?: string;
 };
 

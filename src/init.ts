@@ -99,8 +99,8 @@ const main = async () => {
       "",
       "Next: npm install, then npm run geeta:fetch.",
       "To compare a calculator, define it in geeta.config.json, e.g.",
-      '  "calculators": { "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" } }',
-      "then: npx geeta-compare install mycalc",
+      '  "calculators": [ { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" } ]',
+      "then: npx geeta-compare install Acme",
       "To use an LLM (writing adapters, explaining differences): copy .env.example to .env, set ANTHROPIC_API_KEY, and check with: npx geeta-compare llm",
     ].join("\n"),
   );

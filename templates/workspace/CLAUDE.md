@@ -20,9 +20,13 @@ its plug-in (`calculators/<id>/index.ts`) and findings document (`findings/<id>.
 When asked to write or extend an adapter ("write the adapter for Fuel", "add Enterprises.CroppingGrains"), follow
 "Developing adapters" in `node_modules/geeta-comparison-tool/README.md`:
 
-1. Read what the test holds: its scenario docs (`npm run docs:scenarios`, then `docs/<id>/html/<TestID>/`), the
-   neutral scenarios (`npx geeta-compare neutral export <Test>`), and the result names in the release's
-   `TestResults_*.json` (names and units only).
+1. Read what the test holds, from sources without GEETA's expected values: the neutral scenarios
+   (`npx geeta-compare neutral export <Test>`, then `scenarios/<module>/`), the input labels, units and options in the
+   release (`geeta-releases/<release>/InputFields/`), the result names (`npx geeta-compare names <Test>`), and the
+   catalogue and equations (`node_modules/geeta-comparison-tool/catalogue/veerg-inputs.md`, the release's
+   `Modules/**/*.xlf`). Workbook formulas: `python -I node_modules/geeta-comparison-tool/tools/cellformula.py ...` (or
+   `xlsxf.py`; `py -I` if `python` isn't the command). Don't open the scenario docs, `TestResults_*.json` or `test`
+   output until the adapter is written: they show the expected values.
 2. Read the calculator's inputs: its package's types and documentation, or for an API the OpenAPI document recorded in
    `geeta.lock.json` (the endpoint's request schema and result format).
 3. Write the adapter in the calculator's plug-in folder: convert with `moduleFor("<Test>")!.fromVeerg(input)`, map onto
@@ -31,7 +35,8 @@ When asked to write or extend an adapter ("write the adapter for Fuel", "add Ent
    combine or split, derived, calculator default, no equivalent, ambiguous), from the definitions on both sides.
    Choices (code lookups, defaults, readings of ambiguous definitions) go in the plug-in's `mapping.json` and are read
    with `mapping("<id>")` (`m.lookup`, `m.default`, `m.assumption`): add each one with `"by": "proposed"` and its
-   evidence as the `reason`, and tie each lookup table to its GEETA field (`"geeta"`). Everything else (direct copies,
+   evidence as the `reason`, and tie each lookup table to its GEETA field (`"geeta"`; for options that depend on another field, the parent value in
+   brackets, e.g. `"Table_Input_Fuel.FuelType[Generators]"`). Everything else (direct copies,
    unit conversions, reshaping, derived values) is code, listed in the mapping record at the top of the adapter. For
    an input the calculator can't take, propose `"to": null` with the reason; never drop one silently. A partial
    adapter gets `covers`.

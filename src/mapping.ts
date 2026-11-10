@@ -5,7 +5,8 @@
 //   {
 //     "lookups": {                          // categorical values: GEETA value -> calculator value
 //       "fuel type q": {
-//         "geeta": "Table_Input_Fuel.FuelType",   // optional: the GEETA field, so every option is checked
+//         "geeta": "Table_Input_Fuel.FuelType",   // optional: the GEETA field, so every option is checked;
+//                                                 // "...FuelType[Generators]" for the options of one parent value
 //         "values": {
 //           "Petrol":   { "to": "petrol", "by": "provider" },
 //           "Fuel oil": { "to": "diesel", "by": "provider", "reason": "Acme treats fuel oil as diesel (docs 4.2)" },
@@ -25,7 +26,7 @@
 // waiting for review). `geeta-compare mapping` lists the gaps and the proposals; `--check` fails while any remain.
 import fs from "node:fs";
 import path from "node:path";
-import { calculatorEntry } from "./calculators/config";
+import { calculatorEntry, resolveCalculatorId } from "./calculators/config";
 import { inWorkspace } from "./workspace";
 
 export type DecidedBy = "provider" | "proposed";
@@ -92,7 +93,8 @@ export type Mapping = {
 };
 
 /** The mapping decisions of calculator `id` (its calculators/<id>/mapping.json), for its adapters. */
-export const mapping = (id: string): Mapping => ({
+export const mapping = (nameOrId: string): Mapping => mappingOf(resolveCalculatorId(nameOrId) ?? nameOrId);
+const mappingOf = (id: string): Mapping => ({
   lookup: (table, value) => {
     const v = String(value);
     const entry = readMapping(id).lookups?.[table]?.values?.[v];

@@ -1,14 +1,19 @@
 // The calculators a workspace compares, as geeta.config.json defines them, and what `geeta-compare install` recorded
 // for each in geeta.lock.json.
 //
-//   "calculators": {
-//     "mycalc": {
-//       "name": "My Calculator",                 // shown in reports ("My Calculator defect")
-//       "release": "npm:@acme/emissions",        // where its releases come from (below)
-//       "version": "latest",                     // or an exact version / tag
-//       "plugin": "calculators/mycalc/index.ts"  // optional; this is the default
+//   "calculators": [
+//     {
+//       "name": "My Calculator",                         // its name: shown in reports, and its id is made from it
+//       "release": "npm:@acme/emissions",                // where its releases come from (below)
+//       "version": "latest",                             // or an exact version / tag
+//       "plugin": "calculators/my-calculator/index.ts"   // optional; this is the default
 //     }
-//   }
+//   ]
+//
+// The id names the calculator's folders (calculators/<id>/, explanations/<id>/, findings/<id>.md, docs/<id>/): the
+// name in lower case with anything but letters and digits as dashes ("My Calculator" -> "my-calculator", "ACME" ->
+// "acme"), or an explicit "id". Commands take the name or the id. The older form, an object keyed by id
+// ("calculators": { "mycalc": { "name": ... } }), still works.
 //
 // release:
 //   npm:<package>          an npm package                       version: a version, a dist-tag, or "latest"
@@ -23,6 +28,8 @@ import fs from "node:fs";
 import { inWorkspace, workspaceConfig } from "../workspace";
 
 export type CalculatorEntry = {
+  /** Only to override the id made from the name (it names the folders). */
+  id?: string;
   name?: string;
   release?: string;
   version?: string;
@@ -48,11 +55,52 @@ export type ResolvedEntry = {
   apiKeyEnv?: string;
 };
 
+/** The id made from a name: lower case, anything but letters and digits as one dash ("Method workbench" -> "method-workbench"). */
+export const idOf = (name: string) =>
+  name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const fail = (message: string): never => {
+  console.error(message);
+  process.exit(1);
+};
+
+/** The calculators geeta.config.json defines, in order, with their ids: a list of entries, or the older object keyed by id. */
+export const definedCalculators = (): { id: string; entry: CalculatorEntry }[] => {
+  const raw = workspaceConfig().calculators;
+  if (!raw) return [];
+  const list = Array.isArray(raw)
+    ? raw.map((e, i) => {
+        if (!e || typeof e !== "object" || (!e.name && !e.id)) fail(`geeta.config.json calculators[${i}] needs a "name"`);
+        const id = e.id ?? idOf(e.name!);
+        if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) fail(`geeta.config.json calculators[${i}]: "${e.name}" makes no usable id; give it an "id" (lower case letters, digits, dashes)`);
+        return { id, entry: e as CalculatorEntry };
+      })
+    : Object.entries(raw).map(([id, e]) => ({ id, entry: (typeof e === "string" ? { plugin: e } : e) as CalculatorEntry }));
+  const seen = new Set<string>();
+  for (const { id } of list) {
+    if (seen.has(id)) fail(`geeta.config.json: two calculators have the id "${id}"; give one of them an "id"`);
+    seen.add(id);
+  }
+  return list;
+};
+
+/** The id of the calculator a command names: its id, or its name (any case). */
+export const resolveCalculatorId = (nameOrId: string): string | undefined => {
+  const list = definedCalculators();
+  const n = nameOrId.trim().toLowerCase();
+  return (list.find((c) => c.id === n) ?? list.find((c) => c.entry.name?.toLowerCase() === n) ?? list.find((c) => c.id === idOf(nameOrId)))?.id;
+};
+
 /** A calculator's entry, with the defaults filled in (an entry may also be just the plug-in path, as before 0.2). */
 export const calculatorEntry = (id: string): ResolvedEntry => {
-  const raw = workspaceConfig().calculators?.[id];
-  if (raw === undefined) throw new Error(`geeta.config.json has no calculator "${id}"`);
-  const entry: CalculatorEntry = typeof raw === "string" ? { plugin: raw } : raw;
+  const found = definedCalculators().find((c) => c.id === id);
+  if (!found) throw new Error(`geeta.config.json has no calculator "${id}"`);
+  const entry = found.entry;
   const release = entry.release?.trim() || undefined;
   const [kind, target]: [ReleaseKind, string | undefined] = !release
     ? ["none", undefined]

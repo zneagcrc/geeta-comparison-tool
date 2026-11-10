@@ -1,7 +1,7 @@
 {
   "repo": "zneagcrc/GEETA",
   "release": "{{release}}",
-  "calculators": {},
+  "calculators": [],
   "llm": {
     "provider": "anthropic",
     "model": "claude-opus-5-5",
