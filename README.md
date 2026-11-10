@@ -48,11 +48,12 @@ From an empty folder to explained differences. Each step links to its section be
      [docs/mapping-decisions.md](docs/mapping-decisions.md).
 7. **Review the mapping:** `npx geeta-compare mapping` lists open decisions and the LLM's proposals. Keep each
    proposal (`"by": "provider"`), change it, or remove it; edit the adapter code as you like. Then
-   `npm run docs:scenarios` and check each scenario's mapping table ("Not used by" inputs should all be deliberate).
+   `npx geeta-compare mapping trace Fuel`, `npx geeta-compare docs Fuel`, and check each scenario's mapping table ("Not used by" inputs should all be deliberate).
    A wrong mapping looks exactly like a calculator defect, so review before explaining.
 8. **Compare:** `npm run test:veerg` (deterministic, no LLM).
 9. **Explain the differences:** `npx geeta-compare llm explain Fuel` ("Explanations"), then review the findings
-   document (`findings/acme.md`).
+   document (`findings/acme.md`). For explanations that cite the VEERG methodology documents, point the workspace at
+   your copy first ("The VEERG methodology documents").
 
 Repeat 5 to 9 for the next test. `npx geeta-compare mapping --check` and `npm run test:veerg` in CI keep it honest.
 
@@ -243,9 +244,34 @@ it. First match wins:
 Every run says which test set it used (`Acme 1.2.0 compared with GEETA VEERG_0.0.0.3`), and so do the scenario
 docs and explanation bundles.
 
-The VEERG methodology documents aren't in the GEETA release. For explanations that cite them, point
-`VEERG_DOCUMENTS_DIR` or `geeta.local.json` `"veergDocuments"` at your copy. Without them, explanations cite the `.xlf`
-equations and workbook cells instead.
+### The VEERG methodology documents (optional)
+
+The VEERG methodology documents (the chapters, Appendix A, the Common Requirements Framework) aren't in the GEETA
+release. Explanations can cite them if you point the workspace at your own copy. Without them, explanations cite the
+`.xlf` equations and workbook cells instead.
+
+1. Put the documents (PDF or Word) in a folder, for example `veerg-documents/VEERG V1.1/` in the workspace. Subfolders
+   are fine. Each file's chapters come from its name, e.g. `MG_Chapter3_...`, `MG_Chapters8to9_...`,
+   `MG_Chapters_10_to_13_...`, `MG_AppendixA_...`, `Common Requirements Framework...`. Files that name no chapter are
+   ignored.
+2. Point the workspace at the folder. Either create `geeta.local.json` in the workspace root (relative paths are read
+   from the workspace; in JSON, write `\` as `\\` or use `/`):
+
+   ```json
+   { "veergDocuments": "veerg-documents/VEERG V1.1" }
+   ```
+
+   or set `VEERG_DOCUMENTS_DIR` in `.env` or the environment (an absolute path: relative ones are read from the folder
+   you run the command in). The environment variable wins if both are set.
+3. Keep the documents out of git if they aren't yours to publish: new workspaces ignore `veerg-documents/` and
+   `geeta.local.json`; in an older workspace, add those lines to `.gitignore`.
+4. Check: run `npm run explain -- bundle Fuel` and open the bundle it writes (`explanations/<id>/requests/Fuel.md`).
+   Under "Methodology" it lists the document to cite for each chapter the test's results come from. If it says "no
+   VEERG documents folder", the path is wrong (the line shows where it looked); "no document found" means the folder
+   is right but no file name matches that chapter.
+
+When a chapter has several versions, the bundle picks one to cite: a file under a `soft-launch` folder first, then
+under `pre-release` (files named `accepted` first), then any other, the newest file winning a tie.
 
 ## Comparing
 
@@ -281,10 +307,11 @@ ids) limits a rule to some calculators; `reason` is required. A rule that matche
 ## Scenario docs (HTML and Markdown)
 
 ```sh
+npx geeta-compare mapping trace                                # first: trace the mapping (see below; slow the first time)
 npm run docs:scenarios                                         # both, to the plug-in's docsDir (html/ and TestScenarios.md)
 npx geeta-compare docs --html out/html                         # HTML only, to a folder
 npx geeta-compare docs --md out/TestScenarios.md               # Markdown only, to a file
-npx geeta-compare docs --test 4_5_ManureManagement_Pigs        # one test (by TestID, as in Test.json)
+npx geeta-compare docs Fuel ManureManagement.Pigs              # some tests, named as for `test` (or by TestID: 8_Fuel)
 npx geeta-compare docs --prefix NIRAlignment                   # published scenarios only (+ the base scenarios they extend)
 npx geeta-compare docs --modules-only                          # skip the enterprises
 npx geeta-compare docs --enterprises-only
@@ -298,8 +325,26 @@ GEETA, yours, findings, explanation, check). The pages open straight from disk. 
 Each module scenario page starts with a **mapping** table: every neutral input, the GEETA workbook field it is written
 to and your calculator's input(s) it reaches (`=` copied, `÷1000` a unit conversion, `↦` looked up, `ƒ` calculated
 from it). It is traced, not declared: each neutral input is changed in turn and the workbook fixture and your
-calculator's inputs are regenerated, so it needs your plug-in's `captureInputs` (and is faster with
-`captureInputsOnly`). Traces are cached in `<docsDir>/.mapping-cache.json`.
+calculator's inputs are regenerated, so it needs your plug-in's `captureInputs`. Traces are cached in
+`<docsDir>/.mapping-cache.json` by scenario, adapter input and calculator version.
+
+**The docs need the mapping traced first.** `docs` refuses, and writes nothing, while a scenario it would show has no
+current trace: one never traced, or whose adapter input or calculator version has changed since. It names the tests to
+trace:
+
+```sh
+npx geeta-compare mapping trace                                # every test (skips what is already current)
+npx geeta-compare mapping trace Fuel ManureManagement.Pigs     # some tests
+```
+
+Tracing runs your calculator once per input value tried, for every scenario, so the first full trace of a large
+calculator can take an hour or more. Trace a test when you review its mapping, just after writing its adapter; then
+`docs` stays about as fast as `test`. `mapping trace` prints each test as it finishes, and every 15 seconds within a
+slow one. Stopping it early keeps what was traced (saved every 30 seconds). To make tracing fast, give the plug-in
+`captureInputsOnly` ("Recording the calculator's inputs"), which records the calculator's input and then stops,
+without calculating. A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that
+itself. A filtered run (`docs Fuel`) checks and writes only those tests' pages; run it without a filter for the full
+set.
 
 ## Explanations (LLM on request only)
 
@@ -360,6 +405,57 @@ An adapter connects one GEETA test to your calculator. It takes the resolved inp
 returns your calculator's results keyed by the GEETA result names (e.g.
 `VEERG_5_3_1_1__1_LimeApplicationCO2Emissions_Result_Method1`). The adapters are registered in the plug-in by test:
 `adapters: { Fuel: fuel, "Enterprises.CroppingGrains": croppingGrains }`.
+
+### Recording the calculator's inputs (`captureInputs`, `captureInputsOnly`)
+
+The scenario docs show what your adapter gave your calculator, and trace the mapping from it. Both work only when the
+plug-in records the calls. Put the recording in the one function that calls your calculator. `captureInputsOnly`
+records the same calls with the calculation skipped, which makes the docs' first run many times faster. It must still
+reject what the calculator would reject: the trace treats a value the calculator refuses as "not valid here".
+
+```ts
+import type { InputCall } from "geeta-comparison-tool/src/calculators/types";
+import { calculate, inputSchema } from "@acme/emissions";
+
+let captured: InputCall[] | undefined;
+let inputsOnly = false;
+/** Anything read from it is itself, so an adapter runs through without a real result. */
+const inert: any = new Proxy(function () {}, {
+  get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : key === "then" ? undefined : inert),
+  apply: () => inert,
+});
+
+export const runAcme = (input: AcmeInput) => {
+  captured?.push({ schema: "AcmeInput", input: structuredClone(input) });
+  if (inputsOnly) {
+    inputSchema.parse(input); // still refuse what Acme would refuse
+    return inert;
+  }
+  return calculate(input);
+};
+
+export const captureInputs = <T>(fn: () => T) => {
+  const outer = captured;
+  const inputs: InputCall[] = (captured = []);
+  try {
+    return { result: fn(), inputs };
+  } finally {
+    captured = outer;
+  }
+};
+
+export const captureInputsOnly = (fn: () => unknown) => {
+  inputsOnly = true;
+  try {
+    return captureInputs(fn).inputs;
+  } finally {
+    inputsOnly = false;
+  }
+};
+```
+
+Pass both to the plug-in: `{ adapters, captureInputs, captureInputsOnly }`. An API calculator's `apiClient` records
+its requests already (`captureInputs: api.captureInputs`).
 
 ## Developing adapters
 

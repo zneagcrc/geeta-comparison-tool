@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type InputTable, type ResultRow, type ScenarioPage, type TestModel, type Value, buildModel, calculatorVersion, slug } from "./scenario-model";
 import { calculator } from "../calculators";
-import { type Landing, type Mapping, saveMappingCache } from "./mapping";
+import { type Landing, type Mapping, mappingCacheFile } from "./mapping";
 import { writeFindingsExclusions } from "../comparison-config";
 import { geetaLabel } from "../geeta-source";
 import type { DecisionUse } from "../mapping";
@@ -41,14 +41,36 @@ if (!htmlDir && !mdFile) {
   mdFile = path.join(ROOT, calculator().docsDir, "TestScenarios.md");
 }
 
+// Tests to document: named as `geeta-compare test` takes them (Fuel, ManureManagement.Pigs), or --test <TestID>
+const WITH_VALUE = new Set(["--html", "--md", "--test", "--prefix", "--calculator"]);
+const tests = [
+  ...args.filter((a, i) => !a.startsWith("--") && !WITH_VALUE.has(args[i - 1] ?? "")),
+  ...args.flatMap((a, i) => (a === "--test" && args[i + 1] ? [args[i + 1]] : [])),
+];
+console.error(`Building the scenario pages${tests.length ? ` for ${tests.join(", ")}` : ""} (mapping tables from ${mappingCacheFile(calculator())}).`);
 const models = buildModel({
-  testId: option("--test"),
+  tests,
   scenarioPrefix: option("--prefix"),
   modulesOnly: flag("--modules-only"),
   enterprisesOnly: flag("--enterprises-only"),
 });
 if (!models.length) throw new Error("No matching tests");
-saveMappingCache(!option("--test") && !option("--prefix") && !flag("--modules-only") && !flag("--enterprises-only"));
+
+// The docs need the mapping traced first (geeta-compare mapping trace): nothing is written while any scenario shown
+// has no current trace (never traced, or its adapter input or the calculator version changed since)
+const untraced = models.filter((t) => t.pages.some((p) => p.mapping === null));
+if (untraced.length) {
+  const count = untraced.reduce((n, t) => n + t.pages.filter((p) => p.mapping === null).length, 0);
+  console.error(
+    [
+      `The mapping isn't ready: ${count} scenario(s) in ${untraced.length} test(s) have no current trace (never traced, or the adapter or ${calculator().name} version changed since):`,
+      `  ${untraced.map((t) => t.key).join(", ")}`,
+      `Trace them first, then run docs again (nothing was written):`,
+      `  npx geeta-compare mapping trace${tests.length ? ` ${untraced.map((t) => t.key).join(" ")}` : ""}`,
+    ].join("\n"),
+  );
+  process.exit(1);
+}
 
 const generated = new Date().toISOString().slice(0, 16).replace("T", " ");
 const version = calculatorVersion();
@@ -411,7 +433,9 @@ const mappingGroup = (p: string[]): { group: string; label: string[] } => {
   return { group: a, label: [b, c, ...rest].filter((x) => x !== undefined) };
 };
 
-const htmlMapping = (m: Mapping | undefined) => {
+const htmlMapping = (m: Mapping | null | undefined) => {
+  if (m === null)
+    return `<p class="note">Not traced (npx geeta-compare mapping trace).</p>`;
   if (!m) return `<p class="note">No neutral format for this test, so no mapping.</p>`;
   type Row = Mapping["rows"][number];
   const untraced = (r: Row) => !m.calculatorTraced || /^(every|no other)/.test(r.note ?? "");

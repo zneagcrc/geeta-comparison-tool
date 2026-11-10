@@ -11,7 +11,7 @@ import { type Review, diagnoseCase } from "../explain/diagnose";
 import type { Finding } from "../explain/findings";
 import type { ExplanationRecord } from "../explain/store";
 import { moduleFor } from "../neutral/registry";
-import { type Mapping, scenarioMapping } from "./mapping";
+import { type Mapping, scenarioMapping, traceStats } from "./mapping";
 import { isExcluded } from "../comparison-config";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
@@ -220,7 +220,8 @@ export type ScenarioPage = {
   /** The scenario in the neutral format (src/neutral), or why it couldn't be converted. */
   neutral?: { value?: unknown; error?: string };
   /** How each neutral input reaches GEETA and the calculator (src/docs/mapping.ts). */
-  mapping?: Mapping;
+  /** undefined: the test has no neutral format; null: not traced yet (docs --trace). */
+  mapping?: Mapping | null;
   /** What the adapter gave the calculator (distinct calls, numeric-check runs excluded). */
   calcInputs: InputCall[];
   results: ResultRow[];
@@ -351,7 +352,8 @@ const followOns = (raw: any): FollowOn[] =>
     return { test: String(fo.TestID ?? "(no TestID)"), rows };
   });
 
-export type PlanOptions = { testId?: string; modulesOnly?: boolean; enterprisesOnly?: boolean; scenarioPrefix?: string };
+/** tests: names as `geeta-compare test` takes them ("Fuel", "ManureManagement.Pigs") or TestIDs ("8_Fuel"). */
+export type PlanOptions = { tests?: string[]; modulesOnly?: boolean; enterprisesOnly?: boolean; scenarioPrefix?: string; trace?: boolean };
 
 /** Walks Test.json and builds a page model per scenario, applying the filters. */
 export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
@@ -364,12 +366,22 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
   };
   collect(config.Tests, []);
 
+  const wanted = opts.tests?.length ? new Set(opts.tests.map((t) => t.toLowerCase())) : undefined;
+  if (wanted) {
+    const known = new Set(entries.flatMap(({ entry, group }) => [String(entry.TestID).toLowerCase(), group.join(".").toLowerCase()]));
+    const unknown = opts.tests!.filter((t) => !known.has(t.toLowerCase()));
+    if (unknown.length)
+      throw new Error(`No test called ${unknown.map((t) => `"${t}"`).join(", ")}. Use the names \`npx geeta-compare test\` shows, e.g. Fuel or ManureManagement.Pigs.`);
+  }
+
   const models: TestModel[] = [];
   for (const { entry, group } of entries) {
     const id = String(entry.TestID);
     const isEnterprise = group[0] === "Enterprises";
-    if (opts.testId ? id.toLowerCase() !== opts.testId.toLowerCase() : (opts.modulesOnly && isEnterprise) || (opts.enterprisesOnly && !isEnterprise)) continue;
     const key = group.join(".");
+    if (wanted ? !wanted.has(id.toLowerCase()) && !wanted.has(key.toLowerCase()) : (opts.modulesOnly && isEnterprise) || (opts.enterprisesOnly && !isEnterprise)) continue;
+    const started = Date.now();
+    const before = { ...traceStats };
     const inputPath = path.join(TEST_DIR, entry.TestInputFile ?? "");
     if (!entry.TestInputFile || !fs.existsSync(inputPath)) {
       models.push({ id, group, key, missing: true, pages: [] });
@@ -404,7 +416,13 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
     const anyShown = shown.length > 0;
     shown = shown.filter(({ name }) => !isExcluded(key, name));
     if (anyShown && !shown.length) continue;
-    const pages = shown.map(({ name, isBase }): ScenarioPage => {
+    let lastNote = Date.now();
+    const pages = shown.map(({ name, isBase }, i): ScenarioPage => {
+      // A slow test (tracing the mapping the first time) says how far it has got every 15 seconds
+      if (Date.now() - lastNote > 15_000) {
+        console.error(`  ${key}: ${i}/${shown.length} scenarios...`);
+        lastNote = Date.now();
+      }
       const raw = scenarios?.find((s) => sameName(s.ScenarioName, name));
       const input = select(scenarios, inputObj, name);
       const parent = raw && scenarios ? parentName(scenarios, raw) : undefined;
@@ -435,7 +453,7 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
         notes: notesOf(raw),
         inputs: inputGroups(input, parent ? basis(select(scenarios, inputObj, parent)) : undefined, labels),
         neutral,
-        mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator()) : undefined,
+        mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator(), !!opts.trace) : undefined,
         calcInputs: calc.inputs,
         results: resultRows(expected, parentExpected, calc.results, key, name, input),
         calc: { status: calc.status, message: calc.message, notes: [...new Set(calc.notes)], decisions: calc.decisions },
@@ -443,6 +461,10 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
       };
     });
     models.push({ id, group, key, missing: false, pages });
+    const traced = traceStats.traced - before.traced;
+    const cached = traceStats.cached - before.cached;
+    const mapping = traced ? `, mapping traced for ${traced}${cached ? ` (${cached} cached)` : ""}` : "";
+    console.error(`  ${key}: ${pages.length} scenario${pages.length === 1 ? "" : "s"}, ${((Date.now() - started) / 1000).toFixed(1)}s${mapping}`);
   }
   return models;
 };

@@ -243,6 +243,12 @@ const cacheFor = (calc: Calculator) => {
   return cache;
 };
 
+/** Scenario mappings traced this run (slow: the calculator runs once per input value tried), read from the cache, and left untraced. */
+export const traceStats = { traced: 0, cached: 0, untraced: 0 };
+
+/** The cache file, relative to the workspace (for progress messages). */
+export const mappingCacheFile = (calc: Calculator) => path.join(calc.docsDir, ".mapping-cache.json");
+
 /** Writes the cache. `prune` (a run over every scenario) drops entries this run didn't use; a filtered run keeps them. */
 export const saveMappingCache = (prune = false) => {
   if (!cache) return;
@@ -254,9 +260,10 @@ export const saveMappingCache = (prune = false) => {
 
 /**
  * The mapping of one scenario. Cached by the neutral scenario, the calculator's inputs for it (so an adapter change
- * re-traces) and the calculator's version.
+ * re-traces) and the calculator's version. Without `trace`, a mapping that would run the calculator is only read from the
+ * cache (null when it isn't there).
  */
-export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calculator): Mapping => {
+export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calculator, trace = true): Mapping | null => {
   let base: InputCall[] | undefined;
   try {
     base = inputsFor(calc, module, neutral);
@@ -270,7 +277,13 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
     .slice(0, 20);
   const c = cacheFor(calc);
   c.used.add(key);
-  if (!c.entries[key]) {
+  if (c.entries[key]) traceStats.cached++;
+  // Without the calculator's inputs (no adapter yet, or no captureInputs) a trace is quick: only GEETA's side is traced
+  else if (!trace && base) {
+    traceStats.untraced++;
+    return null;
+  } else {
+    traceStats.traced++;
     const baseCalc = base ? flatInputs(base) : undefined;
     const rows = traceMapping(module, neutral, calc, baseCalc);
     const reached = new Set(rows.flatMap((r) => r.calculator.map((l) => l.field)));

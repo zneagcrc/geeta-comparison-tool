@@ -3,6 +3,8 @@ node_modules
 geeta-releases
 # Your own override of the GEETA test set (local work in progress)
 geeta.local.json
+# Your copy of the VEERG methodology documents (geeta.local.json "veergDocuments"); not in the public release
+veerg-documents/
 # Generated scenario docs (npm run docs:scenarios)
 docs/scenarios/
 # Secrets for API calculators (apiKeyEnv in geeta.config.json)
