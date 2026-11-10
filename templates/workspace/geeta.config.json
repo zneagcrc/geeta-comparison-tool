@@ -1,0 +1,7 @@
+{
+  "repo": "zneagcrc/GEETA",
+  "release": "{{release}}",
+  "calculators": {
+    "{{id}}": "calculator/index.ts"
+  }
+}

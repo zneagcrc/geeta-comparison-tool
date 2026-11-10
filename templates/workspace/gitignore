@@ -1,0 +1,7 @@
+node_modules
+# Downloaded GEETA releases (npm run geeta:fetch)
+geeta-releases
+# Your own override of the GEETA test set (local work in progress)
+geeta.local.json
+# Generated scenario docs (npm run docs:scenarios)
+docs/scenarios/
