@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["calculator/**/*.ts"]
+  "include": ["calculators/**/*.ts"]
 }

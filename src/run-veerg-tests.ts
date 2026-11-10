@@ -2,8 +2,9 @@
 // Usage: npx geeta-compare test [--calculator <id>] [TestName[:ScenarioName] ...]   (default: the workspace's calculator; nested tests:
 // Group.Name, e.g. EntericMethane.Feedlot)
 // Fixtures come from the pinned GEETA release (npm run geeta:fetch) or a local override (src/geeta-source.ts).
-import { findTest, loadCases } from "./fixtures";
+import { findTest, loadCases, readJson } from "./fixtures";
 import { geetaLabel } from "./geeta-source";
+import { resetDecisionUses } from "./mapping";
 import { calculator } from "./calculators";
 import { comparedResults } from "./calculators/types";
 import { isExcluded, warnUnmatched } from "./comparison-config";
@@ -16,6 +17,8 @@ const selection = requested.length ? requested : Object.keys(adapters).map((name
 let failures = 0;
 // Scenarios comparison.config.json leaves out of the comparison: not run, only counted
 let excluded = 0;
+/** Results compared (an adapter error counts its scenario's results). */
+let compared = 0;
 warnUnmatched(Object.keys(adapters));
 // Differing results by how well the stored explanation is supported, and whether it was written against this evidence
 const tally = { verified: 0, suspected: 0, unchecked: 0, unexplained: 0, stale: 0, unreviewed: 0 };
@@ -42,6 +45,7 @@ for (const [name, scenarioFilter] of selection) {
       continue;
     }
     let actual: Record<string, number | string | undefined>;
+    resetDecisionUses();
     try {
       actual = adapter(input);
     } catch (error: any) {
@@ -49,6 +53,7 @@ for (const [name, scenarioFilter] of selection) {
       console.log(`  ERROR: ${reason.slice(0, 300)}`);
       // An adapter error leaves every result of the scenario unexplained
       failures += Object.keys(expected).length;
+      compared += Object.keys(expected).length;
       tally.unexplained += Object.keys(expected).length;
       continue;
     }
@@ -58,6 +63,7 @@ for (const [name, scenarioFilter] of selection) {
       const numeric = typeof exp === "number" && typeof act === "number";
       const { differs, findings, record, check, review } = diagnosis.results[key];
       const status = !differs ? undefined : !record ? "unexplained" : !check ? "unchecked" : check.ok ? "verified" : "suspected";
+      compared++;
       if (differs) failures++;
       if (status) tally[status]++;
       if (review === "stale" || review === "unreviewed") tally[review]++;
@@ -84,7 +90,17 @@ console.log(
         `${tally.suspected} suspect: the check fails (✗), ${tally.unexplained} unexplained (FAIL ?). ` +
         `${tally.stale} stale and ${tally.unreviewed} unreviewed (evidence differs from when the explanation was written). ` +
         `No LLM was used; ask for explanations with: npm run explain -- status`
-    : "\nAll results match",
+    : compared
+      ? `\nAll ${compared} results match`
+      : "\nNothing was compared",
 );
+
+// Run with no tests named: also list the tests the plug-in has no adapter for yet
+if (!requested.length) {
+  const paths = (node: Record<string, any>, prefix = ""): string[] =>
+    Object.entries(node).flatMap(([k, v]) => (v?.TestInputFile ? [`${prefix}${k}`] : v && typeof v === "object" ? paths(v, `${prefix}${k}.`) : []));
+  const missing = paths(readJson("Test.json").Tests).filter((t) => !adapters[t]);
+  if (missing.length) console.log(`No adapter yet for ${missing.length} test(s): ${missing.join(", ")}`);
+}
 if (excluded) console.log(`${excluded} scenario(s) excluded by comparison.config.json`);
 process.exitCode = failures ? 1 : 0;

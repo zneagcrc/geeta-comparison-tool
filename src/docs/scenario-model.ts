@@ -15,6 +15,7 @@ import { type Mapping, scenarioMapping } from "./mapping";
 import { isExcluded } from "../comparison-config";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
+import { type DecisionUse, decisionUses, resetDecisionUses } from "../mapping";
 
 const { adapters, captureInputs, name: calculatorName } = calculator();
 
@@ -224,7 +225,7 @@ export type ScenarioPage = {
   calcInputs: InputCall[];
   results: ResultRow[];
   /** "ok", or why the calculator has no results (no adapter, or the adapter's error). */
-  calc: { status: "ok" | "none" | "error"; message?: string; notes: string[] };
+  calc: { status: "ok" | "none" | "error"; message?: string; notes: string[]; decisions: DecisionUse[] };
   followOns: FollowOn[];
 };
 export type TestModel = { id: string; group: string[]; key: string; missing: boolean; pages: ScenarioPage[] };
@@ -246,20 +247,23 @@ const close = (a: unknown, b: unknown) => {
 const runCalculator = (
   key: string,
   input: any,
-): { results?: Record<string, unknown>; status: ScenarioPage["calc"]["status"]; message?: string; notes: string[]; inputs: InputCall[] } => {
+): { results?: Record<string, unknown>; status: ScenarioPage["calc"]["status"]; message?: string; notes: string[]; inputs: InputCall[]; decisions: DecisionUse[] } => {
   const adapter = adapters[key];
-  if (!adapter) return { status: "none", message: `No ${calculatorName} adapter for this test yet`, notes: [], inputs: [] };
+  if (!adapter) return { status: "none", message: `No ${calculatorName} adapter for this test yet`, notes: [], inputs: [], decisions: [] };
   const notes: string[] = [];
+  // The mapping decisions (mapping.json) the adapter uses for this scenario
+  resetDecisionUses();
+  const decisions = () => [...decisionUses()];
   let inputs: InputCall[] = [];
   const { log, warn } = console;
   console.log = console.warn = (...args: unknown[]) => notes.push(args.map(String).join(" ").trim());
   try {
     const captured = captureInputs ? captureInputs(() => adapter(input)) : { result: adapter(input), inputs: [] };
     inputs = captured.inputs;
-    return { results: captured.result, status: "ok", notes, inputs };
+    return { results: captured.result, status: "ok", notes, inputs, decisions: decisions() };
   } catch (error: any) {
     const message = String(error?.issues ? JSON.stringify(error.issues.map((i: any) => i.message)) : (error?.message ?? error));
-    return { status: "error", message: message.slice(0, 500), notes, inputs };
+    return { status: "error", message: message.slice(0, 500), notes, inputs, decisions: decisions() };
   } finally {
     console.log = log;
     console.warn = warn;
@@ -434,7 +438,7 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
         mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator()) : undefined,
         calcInputs: calc.inputs,
         results: resultRows(expected, parentExpected, calc.results, key, name, input),
-        calc: { status: calc.status, message: calc.message, notes: [...new Set(calc.notes)] },
+        calc: { status: calc.status, message: calc.message, notes: [...new Set(calc.notes)], decisions: calc.decisions },
         followOns: followOns(raw ?? (scenarios ? undefined : inputObj)),
       };
     });

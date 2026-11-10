@@ -1,0 +1,6 @@
+{
+  "$comment": "{{name}}'s mapping decisions, read by its adapters with mapping(\"{{id}}\") (geeta-comparison-tool/src/mapping). \"by\": \"provider\" is final; \"proposed\" waits for review. npx geeta-compare mapping lists gaps and proposals. Guide: node_modules/geeta-comparison-tool/docs/mapping-decisions.md",
+  "lookups": {},
+  "defaults": {},
+  "assumptions": {}
+}

@@ -48,3 +48,12 @@ export type Calculator = {
   /** VEERG results from a neutral scenario, by test (src/neutral/cli.ts `results`). */
   neutralResults?: Record<string, (scenario: any) => Record<string, unknown>>;
 };
+
+/**
+ * What a plug-in module default-exports. The rest comes from the calculator's entry in geeta.config.json: `id` (its
+ * key), `name`, the `version` that `geeta-compare install` recorded in geeta.lock.json, and the default paths
+ * (adapterDir `calculators/<id>`, findings `findings/<id>.md`, docsDir `docs/<id>`). A plug-in can still set any of
+ * them, e.g. `version()` for an API that reports its own version.
+ */
+export type CalculatorPlugin = Omit<Calculator, "id" | "name" | "version" | "adapterDir" | "findings" | "docsDir"> &
+  Partial<Pick<Calculator, "id" | "name" | "version" | "adapterDir" | "findings" | "docsDir">>;

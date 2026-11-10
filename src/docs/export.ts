@@ -14,6 +14,7 @@ import { calculator } from "../calculators";
 import { type Landing, type Mapping, saveMappingCache } from "./mapping";
 import { writeFindingsExclusions } from "../comparison-config";
 import { geetaLabel } from "../geeta-source";
+import type { DecisionUse } from "../mapping";
 import { WORKSPACE } from "../workspace";
 
 /** The geeta design system's dist/ folder: the installed package, or the copy a public release ships in vendor/. */
@@ -233,6 +234,8 @@ td.check.ok .verdict{color:var(--paddock-green)}
 td.check.suspect{background:var(--status-error-surface)}
 td.check.suspect .verdict{color:var(--status-error)}
 td.check.none{color:var(--neutral-mid-light);font-style:italic}
+table.decisions tr.gap td{background:var(--status-error-surface);color:var(--status-error)}
+table.decisions tr.proposed td{background:var(--status-attention-surface)}
 
 /* --- index page --- */
 body.index h1{font-size:var(--font-size-heading-2);margin:0 0 .3rem;color:var(--brand-deep)}
@@ -491,6 +494,23 @@ const htmlCheck = (r: ResultRow) => {
   return `<td class="check ${c.ok ? "ok" : "suspect"}"><span class="verdict">${c.ok ? "✓" : "✗ Suspect"}</span>${he(c.kind)}: ${he(c.detail)}</td>`;
 };
 
+/** The mapping decisions (mapping.json) the adapter used for this scenario: what, the value, who decided and why. */
+const decisionValue = (d: DecisionUse) => (d.gap ? "no decision" : d.to === null ? "no equivalent (left out)" : JSON.stringify(d.to));
+const htmlDecisions = (decisions: DecisionUse[]) => {
+  const rows = [...new Map(decisions.map((d) => [`${d.kind} ${d.key} ${d.value ?? ""}`, d])).values()];
+  return (
+    `<p class="note"><b>${he(C)} mapping decisions</b> (mapping.json): provider = decided by ${he(C)}'s provider; proposed = a draft not yet reviewed; no decision = a gap, the input was left out.</p>` +
+    `<table class="decisions"><thead><tr><th>Decision</th><th>GEETA value</th><th>${he(C)}</th><th>By</th><th>Reason</th></tr></thead><tbody>` +
+    rows
+      .map(
+        (d) =>
+          `<tr class="${d.gap ? "gap" : (d.by ?? "provider")}"><td>${he(d.kind)} ${he(d.key)}</td><td>${he(d.value ?? "")}</td><td>${he(decisionValue(d))}</td><td>${he(d.gap ? "" : (d.by ?? "provider"))}</td><td>${he(d.reason ?? "")}</td></tr>`,
+      )
+      .join("") +
+    `</tbody></table>`
+  );
+};
+
 const htmlResults = (rows: ResultRow[], page: ScenarioPage) => {
   if (!rows.length) return `<p class="note">(no results)</p>`;
   // The explanation and check columns only appear when something on the page differs
@@ -557,6 +577,7 @@ const renderPage = (test: TestModel, page: ScenarioPage, prev?: ScenarioPage, ne
   const results: string[] = ["<h2>Results</h2>"];
   if (page.calc.status !== "ok") results.push(`<p class="note"><b>${he(C)}:</b> ${he(page.calc.message)}</p>`);
   if (page.calc.notes.length) results.push(`<p class="note"><b>${he(C)} mapping notes:</b></p><ul class="calc-notes">${page.calc.notes.map((n) => `<li>${he(n)}</li>`).join("")}</ul>`);
+  if (page.calc.decisions.length) results.push(htmlDecisions(page.calc.decisions));
   results.push(htmlResults(page.results, page));
   for (const fo of page.followOns) {
     results.push(`<h3>Follow-on &rarr; ${he(fo.test)}</h3><table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>`);
@@ -817,6 +838,15 @@ const writeMarkdown = (file: string) => {
         w(`${C} mapping notes:`);
         w();
         for (const n of p.calc.notes) w(`- ${md(n)}`);
+        w();
+      }
+      if (p.calc.decisions.length) {
+        w(`${C} mapping decisions (mapping.json):`);
+        w();
+        w("| Decision | GEETA value | " + C + " | By | Reason |");
+        w("|---|---|---|---|---|");
+        for (const d of [...new Map(p.calc.decisions.map((d) => [`${d.kind} ${d.key} ${d.value ?? ""}`, d])).values()])
+          w(`| ${md(`${d.kind} ${d.key}`)} | ${md(d.value ?? "")} | ${md(decisionValue(d))} | ${d.gap ? "" : (d.by ?? "provider")} | ${md(d.reason ?? "")} |`);
         w();
       }
       if (p.results.length) {

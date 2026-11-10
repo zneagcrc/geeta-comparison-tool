@@ -6,13 +6,16 @@ const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
 const COMMANDS = {
-  init: ["src/init.ts", "Set up a calculator workspace here: geeta-compare init <id> [\"<Name>\"]"],
+  init: ["src/init.ts", "Set up a comparison workspace here (no calculator yet)"],
+  install: ["src/install.ts", "Install the calculators defined in geeta.config.json (all, or the ids named) and record their versions"],
   fetch: ["src/geeta-fetch.ts", "Download the GEETA release pinned in geeta.config.json (or the one named)"],
   test: ["src/run-veerg-tests.ts", "Compare the calculator with GEETA: every test, or the tests and scenarios named"],
   docs: ["src/docs/export.ts", "Write the scenario docs (HTML and Markdown) to the calculator's docsDir"],
   explain: ["src/explain/cli.ts", "Explanations: status, bundle, history, add (see README.md)"],
   neutral: ["src/neutral/cli.ts", "Neutral scenario format: check, export, to-veerg, run"],
   baseline: ["src/neutral/baseline.ts", "Adapter regression baseline: compare, save"],
+  llm: ["src/llm-cli.ts", "The LLM (geeta.config.json llm, key in .env): check it; llm adapter <Test>; llm explain <Test>"],
+  mapping: ["src/mapping-cli.ts", "Mapping decisions (mapping.json): gaps, undecided GEETA options, proposals to review; --check fails while any remain"],
 };
 
 const [command, ...args] = process.argv.slice(2);

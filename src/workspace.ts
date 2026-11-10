@@ -7,7 +7,9 @@
 //   {
 //     "repo": "zneagcrc/GEETA",                 // where GEETA releases are published
 //     "release": "VEERG_0.0.0.3",               // the release this workspace compares with (npm run geeta:fetch)
-//     "calculators": { "mycalc": "calculator/index.ts" },   // id -> plug-in module (default export: a Calculator)
+//     "calculators": {                          // the calculators to compare (src/calculators/config.ts)
+//       "mycalc": { "name": "My Calculator", "release": "npm:@acme/emissions", "version": "latest" }
+//     },
 //     "calculator": "mycalc"                    // optional: the default when there are several
 //   }
 import fs from "node:fs";
@@ -18,7 +20,8 @@ export const CONFIG_FILE_NAME = "geeta.config.json";
 export type WorkspaceConfig = {
   repo: string;
   release: string;
-  calculators?: Record<string, string>;
+  /** id -> its definition (src/calculators/config.ts); a plain string is just the plug-in path. */
+  calculators?: Record<string, string | { name?: string; release?: string; version?: string; plugin?: string; apiKeyEnv?: string }>;
   calculator?: string;
 };
 
@@ -44,6 +47,15 @@ function fail(message: string): never {
 
 /** The workspace folder (absolute). */
 export const WORKSPACE = findWorkspace();
+
+// Secrets such as API keys can sit in the workspace's .env (gitignored): KEY=value lines, read into the environment
+// without overriding what is already set.
+const envFile = path.join(WORKSPACE, ".env");
+if (fs.existsSync(envFile))
+  for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, "$2");
+  }
 
 /** A path relative to the workspace, made absolute. */
 export const inWorkspace = (...parts: string[]) => path.resolve(WORKSPACE, ...parts);

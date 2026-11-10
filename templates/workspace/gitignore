@@ -5,3 +5,5 @@ geeta-releases
 geeta.local.json
 # Generated scenario docs (npm run docs:scenarios)
 docs/scenarios/
+# Secrets for API calculators (apiKeyEnv in geeta.config.json)
+.env
