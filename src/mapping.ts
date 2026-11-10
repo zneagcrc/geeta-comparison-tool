@@ -26,7 +26,7 @@
 // waiting for review). `geeta-compare mapping` lists the gaps and the proposals; `--check` fails while any remain.
 import fs from "node:fs";
 import path from "node:path";
-import { calculatorEntry, resolveCalculatorId } from "./calculators/config";
+import { calculatorEntry, requireCalculatorId } from "./calculators/config";
 import { inWorkspace } from "./workspace";
 
 export type DecidedBy = "provider" | "proposed";
@@ -93,7 +93,7 @@ export type Mapping = {
 };
 
 /** The mapping decisions of calculator `id` (its calculators/<id>/mapping.json), for its adapters. */
-export const mapping = (nameOrId: string): Mapping => mappingOf(resolveCalculatorId(nameOrId) ?? nameOrId);
+export const mapping = (nameOrId: string): Mapping => mappingOf(requireCalculatorId(nameOrId, `mapping("${nameOrId}")`));
 const mappingOf = (id: string): Mapping => ({
   lookup: (table, value) => {
     const v = String(value);

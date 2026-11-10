@@ -96,6 +96,17 @@ export const resolveCalculatorId = (nameOrId: string): string | undefined => {
   return (list.find((c) => c.id === n) ?? list.find((c) => c.entry.name?.toLowerCase() === n) ?? list.find((c) => c.id === idOf(nameOrId)))?.id;
 };
 
+/**
+ * The id for a name or id a plug-in passes (to mapping(), apiClient(), ...); throws an error that says where the name came
+ * from and which calculators exist, e.g. after a calculator was renamed and the plug-in still uses the old name.
+ */
+export const requireCalculatorId = (nameOrId: string, where: string): string => {
+  const id = resolveCalculatorId(nameOrId);
+  if (id) return id;
+  const have = definedCalculators().map((c) => (c.entry.name && c.entry.name !== c.id ? `${c.entry.name} (${c.id})` : c.id));
+  throw new Error(`${where}: no calculator "${nameOrId}" in geeta.config.json (it has: ${have.join(", ") || "none"}). Use one of those names in the plug-in.`);
+};
+
 /** A calculator's entry, with the defaults filled in (an entry may also be just the plug-in path, as before 0.2). */
 export const calculatorEntry = (id: string): ResolvedEntry => {
   const found = definedCalculators().find((c) => c.id === id);

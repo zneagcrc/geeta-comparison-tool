@@ -40,7 +40,8 @@ From an empty folder to explained differences. Each step links to its section be
    `npx geeta-compare llm` (it checks the key and the model, using no tokens).
 5. **See which tests need an adapter:** `npx geeta-compare test` lists them. Start with a small one, e.g. `Fuel`.
 6. **Write the adapter**, one test at a time, either way ("Developing adapters"):
-   - **With the LLM:** `npx geeta-compare llm adapter Fuel`. Claude Code writes the adapter in
+   - **With the LLM:** `npx geeta-compare llm adapter Fuel` (add `hint:"..."` for anything you know, e.g.
+     `hint:"Acme has no town gas"`). Claude Code writes the adapter in
      `calculators/acme/`, proposes its mapping decisions in `calculators/acme/mapping.json` (as `"proposed"`), runs
      the test and reports what it mapped and left out. The run is billed to your key.
    - **Yourself:** follow "Developing adapters", step by step, and
@@ -190,12 +191,19 @@ ANTHROPIC_API_KEY=sk-ant-...
 ```sh
 npx geeta-compare llm                          # the settings, and a check that the key works and the model exists (no tokens used)
 npx geeta-compare llm adapter Fuel             # Claude Code writes the adapter for a test (mapping decisions as "proposed")
+npx geeta-compare llm adapter Fuel hint:"Acme has no town gas" hint:"use the current car type, not pre-2004"
 npx geeta-compare llm explain ManureManagement.Pigs   # builds the evidence bundle, then Claude Code explains the differences
 ```
 
 The agent is Claude Code, which `init` adds to the workspace as a dev dependency (`@anthropic-ai/claude-code`). It
 runs in the workspace with your model and key, follows the workspace's `CLAUDE.md`, and may only read and edit files
 and run `npx geeta-compare` and `npm run` commands. Each run is billed to the key (or the sign-in) like any other use.
+
+**Hints** (`hint:"..."` or `--hint "..."`, any number, for `llm adapter` and `llm explain`) tell the agent what you know
+about your calculator. A mapping decision that follows directly from a hint is recorded in `mapping.json` as yours
+(`"by": "provider"`, with the hint as its reason), so it needs no review and later runs keep it without the hint;
+everything else the agent works out stays `"proposed"`. For `llm explain`, hints are leads it cites, and every
+explanation still needs its numeric check.
 
 While it runs, it prints what it is doing (`→ Read calculators/acme/index.ts`, `→ Run: npx geeta-compare test Fuel`,
 what it says between steps, and `… still working (2m 30s)` when it is quiet), then its report, the time taken, the

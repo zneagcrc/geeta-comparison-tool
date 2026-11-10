@@ -10,7 +10,7 @@
 //   const plugin: CalculatorPlugin = { adapters, captureInputs: api.captureInputs };   // requests shown in the docs
 import { execFileSync } from "node:child_process";
 import type { InputCall } from "./calculators/types";
-import { calculatorEntry, resolveCalculatorId } from "./calculators/config";
+import { calculatorEntry, requireCalculatorId } from "./calculators/config";
 
 export type HttpResponse = { status: number; json?: any; text: string };
 
@@ -75,7 +75,7 @@ export type ApiClient = {
 
 /** The client for calculator `id`, released as an API ("release": "http(s)://..." in geeta.config.json). */
 export const apiClient = (nameOrId: string): ApiClient => {
-  const id = resolveCalculatorId(nameOrId) ?? nameOrId;
+  const id = requireCalculatorId(nameOrId, `apiClient("${nameOrId}")`);
   const entry = calculatorEntry(id);
   if (entry.kind !== "api") throw new Error(`${id} isn't released as an API (its release is ${entry.release ?? "not set"})`);
   const url = entry.apiUrl!;

@@ -1,15 +1,39 @@
 // geeta-compare llm                       the LLM settings, and a check of the key and model (no tokens used)
 // geeta-compare llm adapter <Test>        Claude Code writes (or extends) the adapter for a test, as CLAUDE.md says
 // geeta-compare llm explain <Test>[:<Scenario>]   builds the evidence bundle, then Claude Code explains the differences
-// Add --calculator <id> when the workspace has several calculators. See src/llm.ts for the settings.
+// Hints from the provider, any number: hint:"Acme has no town gas" or --hint "...". Add --calculator <name or id>
+// when the workspace has several calculators. See src/llm.ts for the settings.
 import Anthropic from "@anthropic-ai/sdk";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { calculator } from "./calculators";
 import { claudeCodeVersion, llmConfig, llmKey, requireSupportedProvider, runAgent } from "./llm";
 
-const [command, ...rest] = process.argv.slice(2);
+const [command, ...args] = process.argv.slice(2);
+
+// Hints: hint:"text" (the shell passes hint:text as one argument) or --hint "text", any number of either
+const hints: string[] = [];
+const rest: string[] = [];
+for (let i = 0; i < args.length; i++) {
+  const a = args[i];
+  if (a.startsWith("hint:")) hints.push(a.slice(5).trim());
+  else if (a === "--hint" && i + 1 < args.length) hints.push(args[++i].trim());
+  else if (a.startsWith("--hint=")) hints.push(a.slice(7).trim());
+  else rest.push(a);
+}
 const target = rest.find((a) => !a.startsWith("--"));
+
+/** The hints as a prompt section: the provider's own statements, with what they may settle. */
+const hintSection = () =>
+  hints.filter(Boolean).length
+    ? "\n\nHints from the calculator's provider (their statements about their calculator or how to map it; they take precedence over your own reading):\n" +
+      hints
+        .filter(Boolean)
+        .map((h) => `- ${h}`)
+        .join("\n") +
+      "\nA mapping decision that follows directly from a hint is the provider's: record it in mapping.json with \"by\": \"provider\" and the hint as its reason (\"Hint: ...\"). " +
+      "Everything you work out yourself stays \"proposed\". If a hint contradicts the calculator's code, types or documentation, follow the hint but say so in your report."
+    : "";
 
 const check = async () => {
   const c = llmConfig();
@@ -48,14 +72,16 @@ const check = async () => {
 const main = async () => {
   if (!command || command === "check") return check();
   if (!target) {
-    console.error(`Usage: geeta-compare llm ${command} <Test>${command === "explain" ? "[:<Scenario>]" : ""}`);
+    console.error(`Usage: geeta-compare llm ${command} <Test>${command === "explain" ? "[:<Scenario>]" : ""} [hint:"..." ...]`);
     process.exit(1);
   }
   const calc = calculator();
+  for (const h of hints.filter(Boolean)) console.log(`Hint: ${h}`);
   if (command === "adapter") {
     process.exitCode = await runAgent(
       `Write the adapter for the GEETA test ${target} in the ${calc.name} plug-in (calculator "${calc.id}"), following "Writing an adapter" in CLAUDE.md. ` +
-        `Propose your mapping decisions in mapping.json as "proposed"; never change a "provider" decision. Finish with the report CLAUDE.md asks for.`,
+        `Propose your mapping decisions in mapping.json as "proposed"; never change a "provider" decision. Finish with the report CLAUDE.md asks for.` +
+        hintSection(),
     );
     return;
   }
@@ -72,7 +98,16 @@ const main = async () => {
       console.error("The bundle command didn't say where it wrote the bundle.");
       process.exit(1);
     }
-    process.exitCode = await runAgent(`Explain the differences in ${file}, following "Explaining differences" in CLAUDE.md (calculator "${calc.id}").`);
+    process.exitCode = await runAgent(
+      `Explain the differences in ${file}, following "Explaining differences" in CLAUDE.md (calculator "${calc.id}").` +
+        (hints.filter(Boolean).length
+          ? "\n\nHints from the calculator's provider (their statements; use them as leads and cite them as sources, but every explanation still needs its numeric check):\n" +
+            hints
+              .filter(Boolean)
+              .map((h) => `- ${h}`)
+              .join("\n")
+          : ""),
+    );
     return;
   }
   console.error(`Unknown: geeta-compare llm ${command} (use: llm, llm adapter <Test>, llm explain <Test>)`);

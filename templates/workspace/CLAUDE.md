@@ -46,7 +46,9 @@ When asked to write or extend an adapter ("write the adapter for Fuel", "add Ent
    review), and the remaining differences. Don't explain them unless asked.
 
 `mapping.json` belongs to the calculator's provider. Never change or remove an entry marked `"by": "provider"`, and
-never mark one of your own as `"provider"`: if a provider decision looks wrong, say so in your report. When an adapter
+never mark one of your own as `"provider"`: if a provider decision looks wrong, say so in your report. The one
+exception is a hint from the provider in the request (`hint:"..."`): a decision that follows directly from a hint is
+theirs, so record it as `"provider"` with the hint as its reason (`"Hint: ..."`). When an adapter
 is written again (after an upgrade, say), keep the provider's decisions and propose only for what is new.
 
 Never use GEETA's expected values while writing an adapter, and never adjust a conversion until results match: map
