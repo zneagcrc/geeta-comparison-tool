@@ -217,7 +217,7 @@ when a difference turns out to be a mapping question.
 // | Result 5.3.1.1 (1) CO2           | results.Fertiliser.E_lime (t CO2) | =    | equation 5.3.1.1 (1) in the response              |
 ```
 
-Then check it against what the adapter really does: with the plug-in's `captureInputs`, the scenario docs' mapping
+Then check it against what the adapter really does: with the plug-in's `calculateAndCaptureInputs`, the scenario docs' mapping
 table traces each neutral input to the calculator inputs it reached, with the kind it found (`=`, `÷1000`, `↦`, `ƒ`).
 A record that says `=` where the trace says `ƒ`, or an input the record maps that the trace shows as "Not used", is a
 mistake in one of them.

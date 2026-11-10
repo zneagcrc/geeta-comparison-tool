@@ -17,7 +17,7 @@ import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
 import { type DecisionUse, decisionUses, resetDecisionUses } from "../mapping";
 
-const { adapters, captureInputs, name: calculatorName } = calculator();
+const { adapters, calculateAndCaptureInputs, name: calculatorName } = calculator();
 
 export const INPUT_FIELDS_DIR = path.resolve(TEST_DIR, "../InputFields");
 
@@ -259,7 +259,7 @@ const runCalculator = (
   const { log, warn } = console;
   console.log = console.warn = (...args: unknown[]) => notes.push(args.map(String).join(" ").trim());
   try {
-    const captured = captureInputs ? captureInputs(() => adapter(input)) : { result: adapter(input), inputs: [] };
+    const captured = calculateAndCaptureInputs ? calculateAndCaptureInputs(() => adapter(input)) : { result: adapter(input), inputs: [] };
     inputs = captured.inputs;
     return { results: captured.result, status: "ok", notes, inputs, decisions: decisions() };
   } catch (error: any) {

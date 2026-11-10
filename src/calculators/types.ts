@@ -36,13 +36,18 @@ export type Calculator = {
   findings: string;
   /** Scenario docs folder (relative to the workspace). */
   docsDir: string;
-  /** Runs fn, returning its result and the inputs the calculator was given meanwhile (for the docs). */
-  captureInputs?: <T>(fn: () => T) => { result: T; inputs: InputCall[] };
   /**
-   * The inputs the calculator is given while fn runs, without calculating (fast; fn's result is meaningless). The docs'
-   * mapping trace uses it, else captureInputs. It must capture exactly what captureInputs captures.
+   * Runs fn for real (the calculator calculates) and returns its result with the inputs the calculator was given
+   * meanwhile: shown in the scenario docs, and what the docs' mapping trace compares. (Formerly captureInputs.)
    */
-  captureInputsOnly?: (fn: () => unknown) => InputCall[];
+  calculateAndCaptureInputs?: <T>(fn: () => T) => { result: T; inputs: InputCall[] };
+  /**
+   * Optional and risky: the inputs the calculator is given while fn runs, with the calculation skipped (fn's result is
+   * meaningless). When set, the mapping trace uses it instead of calculateAndCaptureInputs, which is faster but wrong
+   * whenever an adapter builds an input from a result, branches on one, or the calculator rejects an input only while
+   * calculating. Leave it out unless none of that can happen. (Formerly captureInputsOnly.)
+   */
+  captureInputsWithoutCalculating?: (fn: () => unknown) => InputCall[];
   /** Calculator source files an adapter's source text refers to, listed in explanation bundles. */
   sourceFiles?: (adapterSource: string) => string[];
   /** VEERG results from a neutral scenario, by test (src/neutral/cli.ts `results`). */
@@ -56,4 +61,9 @@ export type Calculator = {
  * them, e.g. `version()` for an API that reports its own version.
  */
 export type CalculatorPlugin = Omit<Calculator, "id" | "name" | "version" | "adapterDir" | "findings" | "docsDir"> &
-  Partial<Pick<Calculator, "id" | "name" | "version" | "adapterDir" | "findings" | "docsDir">>;
+  Partial<Pick<Calculator, "id" | "name" | "version" | "adapterDir" | "findings" | "docsDir">> & {
+    /** @deprecated The old name of calculateAndCaptureInputs; still read. */
+    captureInputs?: Calculator["calculateAndCaptureInputs"];
+    /** @deprecated The old name of captureInputsWithoutCalculating; still read. */
+    captureInputsOnly?: Calculator["captureInputsWithoutCalculating"];
+  };

@@ -22,7 +22,7 @@ const adapters: Record<string, Adapter> = {
   // "Enterprises.CroppingGrains": croppingGrains,
 };
 
-/** captureInputs shows each request in the scenario docs. */
-const plugin: CalculatorPlugin = { adapters, captureInputs: api.captureInputs };
+/** calculateAndCaptureInputs shows each request in the scenario docs and lets the mapping trace follow it. */
+const plugin: CalculatorPlugin = { adapters, calculateAndCaptureInputs: api.calculateAndCaptureInputs };
 
 export default plugin;

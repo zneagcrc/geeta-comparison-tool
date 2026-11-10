@@ -151,8 +151,8 @@ API's own version (from `<url>/openapi.json`, `info.version`) and where its Open
 
 The plug-in `install` creates for an API uses `apiClient` (`geeta-comparison-tool/src/http`): `api.post("<endpoint>",
 body)` sends JSON to `<url>/<endpoint>` and returns the parsed response, throwing on an error status with the API's
-message. Identical requests in one run are sent once. Set `captureInputs: api.captureInputs` in the plug-in and the
-scenario docs show every request an adapter sent. For any other HTTP call in an adapter, `requestJsonSync` does one
+message. Identical requests in one run are sent once. Set `calculateAndCaptureInputs: api.calculateAndCaptureInputs` in the
+plug-in and the scenario docs show every request an adapter sent. For any other HTTP call in an adapter, `requestJsonSync` does one
 request synchronously.
 
 Every command runs in the workspace it is started in (the folder with `geeta.config.json`, or below it). Set
@@ -325,7 +325,7 @@ GEETA, yours, findings, explanation, check). The pages open straight from disk. 
 Each module scenario page starts with a **mapping** table: every neutral input, the GEETA workbook field it is written
 to and your calculator's input(s) it reaches (`=` copied, `÷1000` a unit conversion, `↦` looked up, `ƒ` calculated
 from it). It is traced, not declared: each neutral input is changed in turn and the workbook fixture and your
-calculator's inputs are regenerated, so it needs your plug-in's `captureInputs`. Traces are cached in
+calculator's inputs are regenerated, so it needs your plug-in's `calculateAndCaptureInputs`. Traces are cached in
 `<docsDir>/.mapping-cache.json` by scenario, adapter input and calculator version.
 
 **The docs need the mapping traced first.** `docs` refuses, and writes nothing, while a scenario it would show has no
@@ -340,9 +340,8 @@ npx geeta-compare mapping trace Fuel ManureManagement.Pigs     # some tests
 Tracing runs your calculator once per input value tried, for every scenario, so the first full trace of a large
 calculator can take an hour or more. Trace a test when you review its mapping, just after writing its adapter; then
 `docs` stays about as fast as `test`. `mapping trace` prints each test as it finishes, and every 15 seconds within a
-slow one. Stopping it early keeps what was traced (saved every 30 seconds). To make tracing fast, give the plug-in
-`captureInputsOnly` ("Recording the calculator's inputs"), which records the calculator's input and then stops,
-without calculating. A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that
+slow one. Stopping it early keeps what was traced (saved every 30 seconds). Every try is a real calculation, so
+the table shows what your calculator really receives. A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that
 itself. A filtered run (`docs Fuel`) checks and writes only those tests' pages; run it without a filter for the full
 set.
 
@@ -397,7 +396,8 @@ The plug-in (`calculators/<id>/index.ts`, created by `install`) default-exports 
 | `version()` | Default: the version `install` recorded. Part of every evidence fingerprint. Give an API calculator one that asks the API |
 | `adapterDir` | Default: the plug-in's folder. Where adapter sources are, for explanation bundles: `<adapterDir>/<function name>.ts` |
 | `findings`, `docsDir` | Defaults: `findings/<id>.md` and `docs/<id>` (relative to the workspace) |
-| `captureInputs`, `captureInputsOnly` | Optional: the inputs your calculator was given, for the docs and the mapping trace |
+| `calculateAndCaptureInputs` | Optional: runs an adapter and records what it gave your calculator, for the docs and the mapping trace |
+| `captureInputsWithoutCalculating` | Optional, and best left out: see "Recording the calculator's inputs" |
 | `sourceFiles` | Optional: calculator files an adapter uses, listed in explanation bundles |
 | `neutralResults` | Optional: results from a neutral scenario, for `geeta-compare neutral run` |
 
@@ -406,35 +406,26 @@ returns your calculator's results keyed by the GEETA result names (e.g.
 `VEERG_5_3_1_1__1_LimeApplicationCO2Emissions_Result_Method1`). The adapters are registered in the plug-in by test:
 `adapters: { Fuel: fuel, "Enterprises.CroppingGrains": croppingGrains }`.
 
-### Recording the calculator's inputs (`captureInputs`, `captureInputsOnly`)
+### Recording the calculator's inputs (`calculateAndCaptureInputs`)
 
 The scenario docs show what your adapter gave your calculator, and trace the mapping from it. Both work only when the
-plug-in records the calls. Put the recording in the one function that calls your calculator. `captureInputsOnly`
-records the same calls with the calculation skipped, which makes the docs' first run many times faster. It must still
-reject what the calculator would reject: the trace treats a value the calculator refuses as "not valid here".
+plug-in records the calls: put the recording in the one function that calls your calculator, and give the plug-in
+`calculateAndCaptureInputs`. It runs an adapter for real (your calculator calculates) and returns the result with the
+inputs recorded meanwhile.
 
 ```ts
 import type { InputCall } from "geeta-comparison-tool/src/calculators/types";
-import { calculate, inputSchema } from "@acme/emissions";
+import { calculate } from "@acme/emissions";
 
 let captured: InputCall[] | undefined;
-let inputsOnly = false;
-/** Anything read from it is itself, so an adapter runs through without a real result. */
-const inert: any = new Proxy(function () {}, {
-  get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : key === "then" ? undefined : inert),
-  apply: () => inert,
-});
 
+/** Every adapter calls Acme through this, so each input is recorded. */
 export const runAcme = (input: AcmeInput) => {
   captured?.push({ schema: "AcmeInput", input: structuredClone(input) });
-  if (inputsOnly) {
-    inputSchema.parse(input); // still refuse what Acme would refuse
-    return inert;
-  }
   return calculate(input);
 };
 
-export const captureInputs = <T>(fn: () => T) => {
+export const calculateAndCaptureInputs = <T>(fn: () => T) => {
   const outer = captured;
   const inputs: InputCall[] = (captured = []);
   try {
@@ -443,19 +434,22 @@ export const captureInputs = <T>(fn: () => T) => {
     captured = outer;
   }
 };
-
-export const captureInputsOnly = (fn: () => unknown) => {
-  inputsOnly = true;
-  try {
-    return captureInputs(fn).inputs;
-  } finally {
-    inputsOnly = false;
-  }
-};
 ```
 
-Pass both to the plug-in: `{ adapters, captureInputs, captureInputsOnly }`. An API calculator's `apiClient` records
-its requests already (`captureInputs: api.captureInputs`).
+Pass it to the plug-in: `{ adapters, calculateAndCaptureInputs }`. An API calculator's `apiClient` records its requests
+already (`calculateAndCaptureInputs: api.calculateAndCaptureInputs`). The old name, `captureInputs`, still works.
+
+**`captureInputsWithoutCalculating` (optional, and best left out).** The plug-in can also give the mapping trace a
+version that records the inputs but skips the calculation, returning a placeholder. Tracing is then much faster, but the
+table is wrong, with no warning, whenever:
+
+- an adapter builds a calculator input from a result (one call's output feeding the next);
+- an adapter branches on a result (choosing a method by what came back, or throwing when a result is missing); or
+- the calculator rejects an input only while calculating, not in its input schema. The trace would then show a value
+  landing where the calculator would refuse it.
+
+Use it only if none of those can happen in any adapter. Otherwise accept the slow first trace: it runs once and is
+cached. (Its old name, `captureInputsOnly`, still works.)
 
 ## Developing adapters
 
@@ -552,7 +546,8 @@ Develop one test at a time. Each step below says where to look.
    the scenario docs, and they are what a "coverage gap" explanation cites. Never drop an input silently. Then
    `npx geeta-compare mapping` shows what is still undecided.
 6. **Run it and check the mapping.** `npx geeta-compare test <Test>` compares every scenario; an adapter that throws
-   shows `ERROR` with its message for that scenario. Then regenerate the docs: with `captureInputs` in the plug-in, each
+   shows `ERROR` with its message for that scenario. Then run `npx geeta-compare mapping trace <Test>` and regenerate the docs: with
+   `calculateAndCaptureInputs` in the plug-in, each
    scenario's mapping table traces every neutral input to your calculator's inputs, and the "Not used by <name>" filter
    lists the inputs your adapter didn't pass on. Each of those should be deliberate, with a note.
 7. **Lock it in.** `npx geeta-compare baseline save` records every adapter's output; after any later change to an

@@ -153,8 +153,8 @@ const inputsFor = (calc: Calculator, module: NeutralModule, s: any): InputCall[]
   const adapter = calc.adapters[module.test];
   const results = calc.neutralResults?.[module.test] ?? (adapter && ((n: any) => adapter(module.toVeerg(n))));
   if (!results) return undefined;
-  if (calc.captureInputsOnly) return quiet(() => calc.captureInputsOnly!(() => results(s)));
-  return calc.captureInputs ? quiet(() => calc.captureInputs!(() => results(s))).inputs : undefined;
+  if (calc.captureInputsWithoutCalculating) return quiet(() => calc.captureInputsWithoutCalculating!(() => results(s)));
+  return calc.calculateAndCaptureInputs ? quiet(() => calc.calculateAndCaptureInputs!(() => results(s))).inputs : undefined;
 };
 
 const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, baseCalc: Map<string, unknown> | undefined): MappingRow[] => {
@@ -278,7 +278,7 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
   const c = cacheFor(calc);
   c.used.add(key);
   if (c.entries[key]) traceStats.cached++;
-  // Without the calculator's inputs (no adapter yet, or no captureInputs) a trace is quick: only GEETA's side is traced
+  // Without the calculator's inputs (no adapter yet, or no calculateAndCaptureInputs) a trace is quick: only GEETA's side is traced
   else if (!trace && base) {
     traceStats.untraced++;
     return null;

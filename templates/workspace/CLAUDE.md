@@ -40,8 +40,8 @@ When asked to write or extend an adapter ("write the adapter for Fuel", "add Ent
    unit conversions, reshaping, derived values) is code, listed in the mapping record at the top of the adapter. For
    an input the calculator can't take, propose `"to": null` with the reason; never drop one silently. A partial
    adapter gets `covers`. Call the calculator through one function that records its input, and give the plug-in
-   `captureInputs` and `captureInputsOnly` ("Recording the calculator's inputs" in the README) if it doesn't have them:
-   without `captureInputsOnly`, the scenario docs' mapping trace runs the full calculation for every value it tries.
+   `calculateAndCaptureInputs` ("Recording the calculator's inputs" in the README) if it doesn't have it: the scenario
+   docs and their mapping trace need it. Don't add `captureInputsWithoutCalculating`.
 4. Run `npm run typecheck`, `npx geeta-compare test <Test>` and `npx geeta-compare mapping <Test>`, then
    `npx geeta-compare mapping trace <Test>` and `npx geeta-compare docs <Test>`, and check the mapping table: every "Not used by" input must be deliberate and have a note.
 5. Report what the adapter maps, what it leaves out, the decisions you proposed (they wait for the provider's

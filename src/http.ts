@@ -7,7 +7,7 @@
 //     const response = api.post("enterprise-croppinggrains", toApiInput(input));   // <release URL>/<endpoint>
 //     return toGeetaResults(response);
 //   };
-//   const plugin: CalculatorPlugin = { adapters, captureInputs: api.captureInputs };   // requests shown in the docs
+//   const plugin: CalculatorPlugin = { adapters, calculateAndCaptureInputs: api.calculateAndCaptureInputs };   // requests shown in the docs
 import { execFileSync } from "node:child_process";
 import type { InputCall } from "./calculators/types";
 import { calculatorEntry, requireCalculatorId } from "./calculators/config";
@@ -69,7 +69,9 @@ export type ApiClient = {
   post: (endpoint: string, body: unknown) => any;
   /** GETs <url>/<endpoint> (JSON); throws on an error status. */
   get: (endpoint: string) => any;
-  /** For the plug-in's captureInputs: the requests made while fn runs, shown in the scenario docs. */
+  /** For the plug-in's calculateAndCaptureInputs: the requests made while fn runs, shown in the scenario docs. */
+  calculateAndCaptureInputs: <T>(fn: () => T) => { result: T; inputs: InputCall[] };
+  /** @deprecated The old name of calculateAndCaptureInputs. */
   captureInputs: <T>(fn: () => T) => { result: T; inputs: InputCall[] };
 };
 
@@ -98,19 +100,21 @@ export const apiClient = (nameOrId: string): ApiClient => {
     return structuredClone(res.json);
   };
 
+  const calculateAndCaptureInputs = <T>(fn: () => T) => {
+    const outer = capturing;
+    capturing = [];
+    try {
+      const result = fn();
+      return { result, inputs: capturing };
+    } finally {
+      capturing = outer;
+    }
+  };
   return {
     url,
     post: (endpoint, body) => call("POST", endpoint, body),
     get: (endpoint) => call("GET", endpoint),
-    captureInputs: <T>(fn: () => T) => {
-      const outer = capturing;
-      capturing = [];
-      try {
-        const result = fn();
-        return { result, inputs: capturing };
-      } finally {
-        capturing = outer;
-      }
-    },
+    calculateAndCaptureInputs,
+    captureInputs: calculateAndCaptureInputs,
   };
 };

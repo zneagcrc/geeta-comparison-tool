@@ -58,5 +58,8 @@ export const calculator = (): Calculator => {
     adapterDir: plugin!.adapterDir ?? path.posix.dirname(entry.plugin.replace(/\\/g, "/")),
     findings: plugin!.findings ?? `findings/${entry.id}.md`,
     docsDir: plugin!.docsDir ?? `docs/${entry.id}`,
+    // The old names still work
+    calculateAndCaptureInputs: plugin!.calculateAndCaptureInputs ?? plugin!.captureInputs,
+    captureInputsWithoutCalculating: plugin!.captureInputsWithoutCalculating ?? plugin!.captureInputsOnly,
   });
 };
