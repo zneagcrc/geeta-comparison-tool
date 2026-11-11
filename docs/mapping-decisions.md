@@ -10,6 +10,28 @@ The rule underneath all of them: **an adapter translates; it doesn't calculate e
 exactly like a calculator defect in the comparison, so each decision has to rest on what the two sides *define* a
 field to mean, never on which choice makes the numbers match.
 
+## The order of authority
+
+GEETA is the basis of the comparison: a test scenario means what the VEERG methodology defines it to mean, and the
+calculator is what is being checked. When sources disagree about what an input, a period, a season, a class or a
+default means, the higher one decides:
+
+1. **The VEERG methodology documents** (the version the explain bundle marks "cite").
+2. **The `.xlf` equations and source data** in the GEETA release (the documents' content, in machine-readable form).
+3. **The GEETA workbooks** (formulas and labels).
+4. **The calculator** (its types, schema descriptions and documentation).
+
+The calculator's definitions say how to *write* a value in its inputs, never what the scenario *means*. When the
+calculator models something differently from VEERG (a rolling window where VEERG has fixed three-month seasons, a
+per-head rate where VEERG has a total, its own default where VEERG gives one), give it VEERG's value, written in its
+fields as closely as they allow, and record the conflict as an assumption whose reason cites the VEERG clause. Don't
+rebuild the scenario in the calculator's model so that it looks consistent: the difference that follows is the
+comparison's finding (the calculator departs from the methodology), not something the adapter smooths over. Don't
+leave it as a question for the provider either ("if VEERG's definition is meant, ..."): VEERG's definition is meant.
+
+The workbooks rank below the documents because they implement them: if a workbook departs from the documents, that is
+a `Workbook defect` the explanation reports, and the documents still decide what the adapter maps.
+
 ## 1. The evidence to read
 
 Read the definitions on both sides before mapping anything. A field name alone is never enough: `AmountApplied` can
@@ -32,7 +54,8 @@ be a rate or a total, `Duration` can be days or months, a percentage can be 0-10
 | Its output types | Which results it reports, in which unit, and per what (per gas, per class, totals) |
 
 When the two definitions disagree or one is missing, that is itself a finding: note it (section 5) rather than
-guessing quietly.
+guessing quietly. When they disagree, the GEETA side decides what the scenario means
+([the order of authority](#the-order-of-authority)).
 
 ## 2. The kinds of mapping
 
@@ -137,6 +160,8 @@ product means "the limestone share of a lime product" (the rest dolomite) or som
 
 1. Look further first: the calculator's documentation, its schema descriptions, the methodology clause that defines
    the input, an example request in its docs, a question to its developers.
+   A conflict between VEERG's definition and the calculator's isn't an ambiguity: VEERG's decides
+   ([the order of authority](#the-order-of-authority)). Ambiguity is about what the calculator's field means.
 2. If it stays open, choose the reading the definitions support best, **write it as an assumption** in the mapping
    record and as a note (`console.warn("Assumed: FracLime is the limestone share of the product; ...")`), and say so
    when reporting the adapter.

@@ -67,6 +67,8 @@ export const resetDecisionUses = () => {
   noted.clear();
 };
 export const decisionUses = () => used;
+/** The notes printed for the decisions since the last reset (the docs show the decisions themselves instead). */
+export const decisionNotes = () => new Set(noted);
 
 /** Where a calculator's mapping file is: mapping.json beside its plug-in. */
 export const mappingFileOf = (id: string) => inWorkspace(path.dirname(calculatorEntry(id).plugin), "mapping.json");

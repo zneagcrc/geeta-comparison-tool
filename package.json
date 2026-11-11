@@ -1,6 +1,6 @@
 {
   "name": "geeta-comparison-tool",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Compares an emissions calculator built from the VEERG methodology with GEETA, the VEERG calculation workbooks: runs the GEETA test scenarios through it and explains every difference",
   "license": "CC-BY-4.0",

@@ -159,6 +159,11 @@ const bundle = (target: string | undefined) => {
       "so it is current again.",
     `2. Otherwise diagnose from the evidence: the automatic findings, the adapter notes, the sources listed (${calc.name} files, ` +
       'the .xlf equations, the adapter). Follow the workflow in docs/diagnosing.md (in geeta-comparison-tool).',
+    "   GEETA is the basis of the comparison. When sources disagree, the higher one decides: (1) the VEERG methodology " +
+      `documents, (2) the .xlf equations and source data, (3) the GEETA workbooks, (4) ${calc.name}. ${calc.name}'s documentation ` +
+      `says what ${calc.name} does, not what the methodology requires: where ${calc.name} models something differently from VEERG ` +
+      "(its own seasons, periods, classes or defaults), it departs from the methodology. Where the adapter gave it its own model " +
+      "instead of VEERG's, the difference is an `Adapter defect`. Don't leave the choice to the provider.",
     "3. Record each explanation with a draft JSON file and `npm run explain -- add <draft.json>` (format below). Give it a " +
       "numeric check wherever the numbers allow one: prefer `reproduces` (add a `PROBE:<result name>` value to the adapter " +
       "that recomputes the result with the cause corrected), then `ratio`, then `bound`. `add` refuses a draft whose check " +

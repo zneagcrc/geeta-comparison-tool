@@ -11,11 +11,11 @@ import { type Review, diagnoseCase } from "../explain/diagnose";
 import type { Finding } from "../explain/findings";
 import type { ExplanationRecord } from "../explain/store";
 import { moduleFor } from "../neutral/registry";
-import { type Mapping, scenarioMapping, traceStats } from "./mapping";
+import { type Mapping, progress, scenarioMapping, traceStats } from "./mapping";
 import { isExcluded } from "../comparison-config";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
-import { type DecisionUse, decisionUses, resetDecisionUses } from "../mapping";
+import { type DecisionUse, decisionNotes, decisionUses, resetDecisionUses } from "../mapping";
 
 const { adapters, calculateAndCaptureInputs, name: calculatorName } = calculator();
 
@@ -255,16 +255,21 @@ const runCalculator = (
   // The mapping decisions (mapping.json) the adapter uses for this scenario
   resetDecisionUses();
   const decisions = () => [...decisionUses()];
+  // The adapter's own notes: a decision's note repeats the decision, which the docs show in full
+  const own = () => {
+    const fromDecisions = decisionNotes();
+    return notes.filter((n) => !fromDecisions.has(n));
+  };
   let inputs: InputCall[] = [];
   const { log, warn } = console;
   console.log = console.warn = (...args: unknown[]) => notes.push(args.map(String).join(" ").trim());
   try {
     const captured = calculateAndCaptureInputs ? calculateAndCaptureInputs(() => adapter(input)) : { result: adapter(input), inputs: [] };
     inputs = captured.inputs;
-    return { results: captured.result, status: "ok", notes, inputs, decisions: decisions() };
+    return { results: captured.result, status: "ok", notes: own(), inputs, decisions: decisions() };
   } catch (error: any) {
     const message = String(error?.issues ? JSON.stringify(error.issues.map((i: any) => i.message)) : (error?.message ?? error));
-    return { status: "error", message: message.slice(0, 500), notes, inputs, decisions: decisions() };
+    return { status: "error", message: message.slice(0, 500), notes: own(), inputs, decisions: decisions() };
   } finally {
     console.log = log;
     console.warn = warn;
@@ -374,12 +379,16 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
       throw new Error(`No test called ${unknown.map((t) => `"${t}"`).join(", ")}. Use the names \`npx geeta-compare test\` shows, e.g. Fuel or ManureManagement.Pigs.`);
   }
 
-  const models: TestModel[] = [];
-  for (const { entry, group } of entries) {
-    const id = String(entry.TestID);
+  const included = entries.filter(({ entry, group }) => {
+    const id = String(entry.TestID).toLowerCase();
     const isEnterprise = group[0] === "Enterprises";
+    return wanted ? wanted.has(id) || wanted.has(group.join(".").toLowerCase()) : !((opts.modulesOnly && isEnterprise) || (opts.enterprisesOnly && !isEnterprise));
+  });
+
+  const models: TestModel[] = [];
+  for (const [n, { entry, group }] of included.entries()) {
+    const id = String(entry.TestID);
     const key = group.join(".");
-    if (wanted ? !wanted.has(id.toLowerCase()) && !wanted.has(key.toLowerCase()) : (opts.modulesOnly && isEnterprise) || (opts.enterprisesOnly && !isEnterprise)) continue;
     const started = Date.now();
     const before = { ...traceStats };
     const inputPath = path.join(TEST_DIR, entry.TestInputFile ?? "");
@@ -416,10 +425,11 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
     const anyShown = shown.length > 0;
     shown = shown.filter(({ name }) => !isExcluded(key, name));
     if (anyShown && !shown.length) continue;
+    if (opts.trace) progress(`[${n + 1}/${included.length}] ${key}: ${shown.length} scenario${shown.length === 1 ? "" : "s"}`);
     let lastNote = Date.now();
     const pages = shown.map(({ name, isBase }, i): ScenarioPage => {
-      // A slow test (tracing the mapping the first time) says how far it has got every 15 seconds
-      if (Date.now() - lastNote > 15_000) {
+      // A slow test says how far it has got every 15 seconds (a trace prints its own progress for each scenario)
+      if (!opts.trace && Date.now() - lastNote > 15_000) {
         console.error(`  ${key}: ${i}/${shown.length} scenarios...`);
         lastNote = Date.now();
       }
@@ -453,7 +463,7 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
         notes: notesOf(raw),
         inputs: inputGroups(input, parent ? basis(select(scenarios, inputObj, parent)) : undefined, labels),
         neutral,
-        mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator(), !!opts.trace) : undefined,
+        mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator(), !!opts.trace, name === undefined ? key : `${key} › ${title} (${i + 1}/${shown.length})`) : undefined,
         calcInputs: calc.inputs,
         results: resultRows(expected, parentExpected, calc.results, key, name, input),
         calc: { status: calc.status, message: calc.message, notes: [...new Set(calc.notes)], decisions: calc.decisions },

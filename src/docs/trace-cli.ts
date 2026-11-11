@@ -13,7 +13,7 @@ const calc = calculator();
 
 console.error(
   `Tracing the mapping of ${tests.length ? tests.join(", ") : "every test"} into ${mappingCacheFile(calc)}. ` +
-    `Scenarios already traced are skipped; the others run ${calc.name} once per input value tried` +
+    `Scenarios already traced are skipped; the others run ${calc.name} for the input values tried (a table's numbers in batches)` +
     (calc.captureInputsWithoutCalculating
       ? " without calculating (the plug-in's captureInputsWithoutCalculating)."
       : ", so the first run can take a long time; the traces are kept until the adapter or the calculator version changes.") +

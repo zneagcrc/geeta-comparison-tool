@@ -15,6 +15,22 @@ its plug-in (`calculators/<id>/index.ts`) and findings document (`findings/<id>.
 - Never change a calculator's installed release (`node_modules`) to make it match: differences are explained, not
   patched. A calculator is upgraded only by changing its "version" and running `npx geeta-compare install <id>`.
 
+## GEETA is the basis of the comparison
+
+The scenario means what VEERG defines it to mean, and the calculator is what is being checked. When sources disagree,
+the higher one decides:
+
+1. the VEERG methodology documents (the version the explain bundle marks "cite"),
+2. the `.xlf` equations and source data in the GEETA release,
+3. the GEETA workbooks,
+4. the calculator (its types, schema and documentation).
+
+The calculator's definitions say how to write a value in its inputs, never what the scenario means or what the
+methodology requires. When it models something differently from VEERG (its own seasons, periods, classes or defaults),
+the adapter still gives it VEERG's values, and the difference is the calculator's finding. Never rebuild a scenario in
+the calculator's model, and never leave the choice to the provider. Details: "The order of authority" in
+`node_modules/geeta-comparison-tool/docs/mapping-decisions.md`.
+
 ## Writing an adapter (when asked)
 
 When asked to write or extend an adapter ("write the adapter for Fuel", "add Enterprises.CroppingGrains"), follow
@@ -43,7 +59,7 @@ When asked to write or extend an adapter ("write the adapter for Fuel", "add Ent
    `calculateAndCaptureInputs` ("Recording the calculator's inputs" in the README) if it doesn't have it: the scenario
    docs and their mapping trace need it. Don't add `captureInputsWithoutCalculating`.
 4. Run `npm run typecheck`, `npx geeta-compare test <Test>` and `npx geeta-compare mapping <Test>`, then
-   `npx geeta-compare mapping trace <Test>` and `npx geeta-compare docs <Test>`, and check the mapping table: every "Not used by" input must be deliberate and have a note.
+   `npx geeta-compare mapping trace <Test>` and `npx geeta-compare docs <Test>`, and check the test's input mapping page: every "Not used by" input must be deliberate and have a note.
 5. Report what the adapter maps, what it leaves out, the decisions you proposed (they wait for the provider's
    review), and the remaining differences. Don't explain them unless asked.
 
@@ -56,7 +72,8 @@ is written again (after an upgrade, say), keep the provider's decisions and prop
 Never use GEETA's expected values while writing an adapter, and never adjust a conversion until results match: map
 what the inputs mean, then let the comparison show the differences. An adapter translates and never calculates
 emissions: no emission factors, GWPs or methodology equations in it (they are the calculator's). When a mapping is
-ambiguous, choose the reading the definitions support, record it as an assumption, and say so in your report.
+ambiguous, choose the reading the definitions support, record it as an assumption, and say so in your report. A
+conflict between VEERG's definition and the calculator's isn't ambiguous: VEERG's decides (above).
 
 ## Explaining differences (only when asked)
 
@@ -72,6 +89,10 @@ explanations/<id>/requests/…md"):
    - check fails (suspect), no explanation, or no check: diagnose
      (`node_modules/geeta-comparison-tool/docs/diagnosing.md`). Earlier explanations, including superseded ones, are
      leads, not answers.
+
+   Judge which side follows the methodology by the order of authority above. A calculator that departs from VEERG has
+   a defect even when it follows its own documentation. If the adapter gave the calculator its own model instead of
+   VEERG's, that's an `Adapter defect`: say so, and don't explain the difference as the calculator's.
 3. Record each explanation with a draft JSON file and `npm run explain -- add <draft.json>` (format in the bundle).
    `add` computes the evidence fingerprints and refuses a draft whose check fails. Never edit
    `explanations/<id>/*.json` by hand: records are append-only so the history stays.

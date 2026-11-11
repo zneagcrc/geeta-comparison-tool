@@ -157,15 +157,66 @@ const inputsFor = (calc: Calculator, module: NeutralModule, s: any): InputCall[]
   return calc.calculateAndCaptureInputs ? quiet(() => calc.calculateAndCaptureInputs!(() => results(s))).inputs : undefined;
 };
 
-const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, baseCalc: Map<string, unknown> | undefined): MappingRow[] => {
+// --- progress (a calculator-side trace can run for many minutes per scenario) ---------
+
+const PROGRESS_EVERY = 10_000;
+const duration = (ms: number) => (ms < 90_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 60_000).toFixed(1)} min`);
+/** A progress line on stderr, with the time of day (a long trace is often left running). */
+export const progress = (line: string) => process.stderr.write(`${new Date().toTimeString().slice(0, 8)} ${line}\n`);
+
+/** Calculator runs of the trace in progress (for its progress lines and its summary). */
+const run = { count: 0, ms: 0 };
+
+/** Whether a calculator field carries an input's value: its new value copied or converted from the input's new value, and its old value (if it had one) from the old one the same way. */
+const carries = (before: number, after: number, fieldBefore: unknown, fieldAfter: unknown) => {
+  const r = relation(after, fieldAfter);
+  if (!r || r === "↦") return false;
+  if (fieldBefore === undefined || relation(before, fieldBefore) === r) return true;
+  return before === 0 && ["=", "as %"].includes(relation(0, fieldBefore) ?? "");
+};
+
+/** A value of its own for each input of a batch (the k-th), close to the input's value, so a field shows whose value it carries. */
+const batchValue = (v: number, k: number) => (v === 0 ? 0.37 : v * 0.73) * (1 + (k + 1) * 1e-4);
+
+/** Batched tracing (on unless GEETA_TRACE_BATCH=0, which traces every input on its own, for comparison). */
+const batching = () => process.env.GEETA_TRACE_BATCH !== "0";
+
+const traceMapping = (
+  module: NeutralModule,
+  neutral: any,
+  calc: Calculator,
+  baseCalc: Map<string, unknown> | undefined,
+  label?: string,
+): MappingRow[] => {
   const baseFixture = flatFixture(module.toVeerg(neutral));
+  const leaves = inputLeaves(neutral);
+  const started = Date.now();
+  let lastNote = started;
+  let current = 0;
+  let batchSize = 0;
+  run.count = run.ms = 0;
+  if (label && baseCalc) progress(`  ${label}: tracing ${leaves.length} inputs (each value tried runs ${calc.name})`);
   const runCalc = (s: any): Map<string, unknown> | undefined => {
     if (!baseCalc) return undefined;
+    const t0 = Date.now();
     try {
       const calls = inputsFor(calc, module, s);
       return calls && flatInputs(calls);
     } catch {
       return undefined;
+    } finally {
+      run.count++;
+      run.ms += Date.now() - t0;
+      if (label && Date.now() - lastNote > PROGRESS_EVERY) {
+        lastNote = Date.now();
+        const elapsed = lastNote - started;
+        const left = current ? (elapsed / current) * (leaves.length - current) : undefined;
+        progress(
+          `    input ${current + 1}/${leaves.length} (${batchSize ? `a batch of ${batchSize} from ` : ""}${leaves[current]?.path.join(" › ")}): ` +
+            `${run.count} runs at ${(run.ms / run.count / 1000).toFixed(1)}s, ${duration(elapsed)} so far` +
+            (left !== undefined ? `, about ${duration(left)} left` : ""),
+        );
+      }
     }
   };
   // Fields this scenario has (a change that moves an entry, e.g. fuel from stationary to transport, also creates others)
@@ -174,8 +225,48 @@ const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, bas
     return (present.length ? present : fields).map((field) => ({ field, value: now.get(field), relation: relation(value, now.get(field)) }));
   };
 
-  return inputLeaves(neutral)
-    .map(({ path: at, value }) => {
+  // The numeric inputs of one table (a livestock class × month grid, say) are traced together: each is changed to a
+  // value of its own in one calculator run, and each calculator field that changed is credited to the input whose value
+  // it carries. A field no single input accounts for (worked out from several of them, or looked up) splits the batch in
+  // two, down to single inputs. A batch the calculator rejects is split once more; if a half is rejected too, its inputs
+  // are traced one at a time. Single inputs are traced on their own below.
+  const batched = new Map<number, string[]>();
+  if (baseCalc && batching()) {
+    const groups = new Map<string, number[]>();
+    leaves.forEach((l, i) => {
+      if (typeof l.value !== "number") return;
+      const g = l.path.slice(0, -2).join("\u0000");
+      groups.set(g, [...(groups.get(g) ?? []), i]);
+    });
+    const resolve = (ids: number[], rejectedBefore: boolean): void => {
+      if (ids.length < 2) return;
+      current = ids[0];
+      batchSize = ids.length;
+      const values = new Map(ids.map((id, k) => [id, batchValue(leaves[id].value as number, k)]));
+      let s = neutral;
+      for (const [id, v] of values) s = setAt(s, leaves[id].path, v);
+      const now = runCalc(s);
+      const half = Math.ceil(ids.length / 2);
+      const split = (rejected: boolean) => {
+        resolve(ids.slice(0, half), rejected);
+        resolve(ids.slice(half), rejected);
+      };
+      if (!now) return rejectedBefore ? undefined : split(true);
+      const fields = new Map(ids.map((id) => [id, [] as string[]]));
+      for (const f of changed(baseCalc, now)) {
+        const who = ids.filter((id) => carries(leaves[id].value as number, values.get(id)!, baseCalc.get(f), now.get(f)));
+        if (who.length !== 1) return split(false);
+        fields.get(who[0])!.push(f);
+      }
+      for (const [id, fs] of fields) batched.set(id, fs);
+    };
+    for (const ids of groups.values()) resolve(ids, false);
+    batchSize = 0;
+  }
+
+  return leaves
+    .map(({ path: at, value }, i) => {
+      current = i;
       const tries = nudge(value, at);
       let geeta: string[] = [];
       // A string: any value shows where the workbook copies it (a looked-up one shows through the tries below)
@@ -185,7 +276,8 @@ const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, bas
         } catch {
           // not a free-text field
         }
-      let calcFields: string[] | undefined;
+      // A batch traced it already: only GEETA's side is left (which needs no calculator run)
+      let calcFields: string[] | undefined = batched.get(i);
       for (const t of tries) {
         const s = setAt(neutral, at, t);
         try {
@@ -193,7 +285,7 @@ const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, bas
         } catch {
           // a value the workbook format can't take
         }
-        const now = runCalc(s);
+        const now = batched.has(i) ? undefined : runCalc(s);
         if (now) calcFields = [...new Set([...(calcFields ?? []), ...changed(baseCalc!, now)])];
       }
       let note: string | undefined;
@@ -232,6 +324,13 @@ const traceMapping = (module: NeutralModule, neutral: any, calc: Calculator, bas
     });
 };
 
+/** A scenario's trace without the cache, and the calculator runs it took (for checks comparing batched and single-input traces). */
+export const traceUncached = (module: NeutralModule, neutral: any, calc: Calculator) => {
+  const base = inputsFor(calc, module, neutral);
+  const rows = traceMapping(module, neutral, calc, base && flatInputs(base));
+  return { rows, runs: run.count };
+};
+
 // --- cache ------------------------------------------------------------------------
 
 const CACHE_VERSION = 3;
@@ -261,9 +360,9 @@ export const saveMappingCache = (prune = false) => {
 /**
  * The mapping of one scenario. Cached by the neutral scenario, the calculator's inputs for it (so an adapter change
  * re-traces) and the calculator's version. Without `trace`, a mapping that would run the calculator is only read from the
- * cache (null when it isn't there).
+ * cache (null when it isn't there). `label` names the scenario in progress lines (only a calculator-side trace prints them).
  */
-export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calculator, trace = true): Mapping | null => {
+export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calculator, trace = true, label?: string): Mapping | null => {
   let base: InputCall[] | undefined;
   try {
     base = inputsFor(calc, module, neutral);
@@ -285,7 +384,9 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
   } else {
     traceStats.traced++;
     const baseCalc = base ? flatInputs(base) : undefined;
-    const rows = traceMapping(module, neutral, calc, baseCalc);
+    const t0 = Date.now();
+    const rows = traceMapping(module, neutral, calc, baseCalc, label);
+    if (label && baseCalc) progress(`  ${label}: traced in ${duration(Date.now() - t0)} (${run.count} runs of ${calc.name})`);
     const reached = new Set(rows.flatMap((r) => r.calculator.map((l) => l.field)));
     c.entries[key] = {
       rows,
@@ -296,6 +397,7 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
     if (Date.now() - lastSave > 30_000) {
       saveMappingCache();
       lastSave = Date.now();
+      if (label && baseCalc) progress(`  (saved ${Object.keys(c.entries).length} traces to ${mappingCacheFile(calc)}; stopping now keeps them)`);
     }
   }
   return c.entries[key];

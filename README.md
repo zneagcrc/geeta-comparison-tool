@@ -48,7 +48,7 @@ From an empty folder to explained differences. Each step links to its section be
      [docs/mapping-decisions.md](docs/mapping-decisions.md).
 7. **Review the mapping:** `npx geeta-compare mapping` lists open decisions and the LLM's proposals. Keep each
    proposal (`"by": "provider"`), change it, or remove it; edit the adapter code as you like. Then
-   `npx geeta-compare mapping trace Fuel`, `npx geeta-compare docs Fuel`, and check each scenario's mapping table ("Not used by" inputs should all be deliberate).
+   `npx geeta-compare mapping trace Fuel`, `npx geeta-compare docs Fuel`, and check Fuel's input mapping page ("Not used by" inputs should all be deliberate).
    A wrong mapping looks exactly like a calculator defect, so review before explaining.
 8. **Compare:** `npm run test:veerg` (deterministic, no LLM).
 9. **Explain the differences:** `npx geeta-compare llm explain Fuel` ("Explanations"), then review the findings
@@ -318,13 +318,15 @@ npx geeta-compare docs --enterprises-only
 ```
 
 Open `<docsDir>/html/index.html` for the dashboard: totals, every scenario where your calculator differs and why, then
-every scenario's page with its inputs (neutral, GEETA, and what your adapter gave your calculator) and results (NIR,
-GEETA, yours, findings, explanation, check). The pages open straight from disk. Your own CSS goes in
+each test's pages: its **input mapping** page, then a page per scenario with its inputs (neutral, GEETA, and what
+your adapter gave your calculator) and results (NIR, GEETA, yours, findings, explanation, check). The pages open straight from disk. Your own CSS goes in
 `<docsDir>/html/custom.css`, which is never overwritten.
 
-Each module scenario page starts with a **mapping** table: every neutral input, the GEETA workbook field it is written
-to and your calculator's input(s) it reaches (`=` copied, `÷1000` a unit conversion, `↦` looked up, `ƒ` calculated
-from it). It is traced, not declared: each neutral input is changed in turn and the workbook fixture and your
+A test's **input mapping** page shows, in the middle, the mapping table of all its scenarios at once: every neutral
+input, the values the scenarios give it, the GEETA workbook field it is written to and your calculator's input(s) it
+reaches (`=` copied, `÷1000` a unit conversion, `↦` looked up, `ƒ` calculated from it). An input is "not used by"
+your calculator only if no scenario passes it on. On the right are your adapter's notes and its mapping decisions
+(`mapping.json`), each once, with the scenarios it came up in. The table is traced, not declared: each neutral input is changed in turn and the workbook fixture and your
 calculator's inputs are regenerated, so it needs your plug-in's `calculateAndCaptureInputs`. Traces are cached in
 `<docsDir>/.mapping-cache.json` by scenario, adapter input and calculator version.
 
@@ -337,10 +339,14 @@ npx geeta-compare mapping trace                                # every test (ski
 npx geeta-compare mapping trace Fuel ManureManagement.Pigs     # some tests
 ```
 
-Tracing runs your calculator once per input value tried, for every scenario, so the first full trace of a large
-calculator can take an hour or more. Trace a test when you review its mapping, just after writing its adapter; then
-`docs` stays about as fast as `test`. `mapping trace` prints each test as it finishes, and every 15 seconds within a
-slow one. Stopping it early keeps what was traced (saved every 30 seconds). Every try is a real calculation, so
+Tracing changes each input and runs your calculator to see which of its inputs change, for every scenario, so the
+first full trace of a slow calculator can take an hour or more. The numbers of one table (a livestock class × month
+grid, say) are traced together: each gets a value of its own in one run, and a calculator field is credited to the
+input whose value it carries. A field worked out from several inputs splits the batch until each is accounted for, and
+an input the batch can't settle is traced on its own (`GEETA_TRACE_BATCH=0` traces every input on its own). Trace a
+test when you review its mapping, just after writing its adapter; then `docs` stays about as fast as `test`.
+`mapping trace` prints its progress every 10 seconds (the input it's on, the calculator runs so far and the time
+left in the scenario). Stopping it early keeps what was traced (saved every 30 seconds, between scenarios). Every try is a real calculation, so
 the table shows what your calculator really receives. A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that
 itself. A filtered run (`docs Fuel`) checks and writes only those tests' pages; run it without a filter for the full
 set.
@@ -504,8 +510,8 @@ const fraction = m.default("purchases[].fractionConsumed");
 - `"geeta"` ties a lookup table to its GEETA field (`Table.Column`, or an `X_Cell_...` cell), so every option of that
   field is checked, not only the ones the test scenarios use. For options that depend on another field (the fuel types
   of one fuel use), add the parent value: `"Table_Input_Fuel.FuelType[Generators]"`.
-- Decisions with a reason, proposals and defaults print a note in `test`, and every scenario page in the docs lists
-  the decisions its adapter used, with who decided each one and why.
+- Decisions with a reason, proposals and defaults print a note in `test`, and each test's input mapping page in the
+  docs lists the decisions its adapter used, with who decided each one, why, and in which scenarios.
 
 ```sh
 npx geeta-compare mapping            # gaps, GEETA options with no decision, proposals to review, unused decisions
@@ -542,13 +548,13 @@ Develop one test at a time. Each step below says where to look.
    for the result names it handles; `PartialAdapter`) and the others aren't compared.
 5. **Say what you couldn't map.** When an input has no place in your calculator (a fuel type, a manure system or an
    option it doesn't support), leave it out with a note: a `"to": null` decision in `mapping.json` prints one for you,
-   and anything else gets a `console.warn("...")`. Notes appear under the scenario in `test` and as mapping notes in
-   the scenario docs, and they are what a "coverage gap" explanation cites. Never drop an input silently. Then
+   and anything else gets a `console.warn("...")`. Notes appear under the scenario in `test` and on the test's input mapping
+   page in the docs, and they are what a "coverage gap" explanation cites. Never drop an input silently. Then
    `npx geeta-compare mapping` shows what is still undecided.
 6. **Run it and check the mapping.** `npx geeta-compare test <Test>` compares every scenario; an adapter that throws
    shows `ERROR` with its message for that scenario. Then run `npx geeta-compare mapping trace <Test>` and regenerate the docs: with
-   `calculateAndCaptureInputs` in the plug-in, each
-   scenario's mapping table traces every neutral input to your calculator's inputs, and the "Not used by <name>" filter
+   `calculateAndCaptureInputs` in the plug-in, the test's input mapping page traces every neutral input to your
+   calculator's inputs, and the "Not used by <name>" filter
    lists the inputs your adapter didn't pass on. Each of those should be deliberate, with a note.
 7. **Lock it in.** `npx geeta-compare baseline save` records every adapter's output; after any later change to an
    adapter or a calculator upgrade, `npx geeta-compare baseline compare` shows exactly what moved.
@@ -556,6 +562,12 @@ Develop one test at a time. Each step below says where to look.
 
 Rules that keep the comparison honest:
 
+- **GEETA is the basis.** A scenario means what VEERG defines it to mean. When sources disagree, the higher one decides:
+  (1) the VEERG methodology documents, (2) the `.xlf` equations and source data, (3) the GEETA workbooks, (4) your
+  calculator. Your calculator's definitions say how to write a value in its inputs, not what the scenario means: where
+  it models something differently from VEERG (its own seasons, periods or defaults), the adapter still gives it
+  VEERG's values, and the difference shows in the comparison
+  ([docs/mapping-decisions.md](docs/mapping-decisions.md), "The order of authority").
 - **Map inputs only.** An adapter never reads GEETA's expected results, and nothing in it is tuned until the numbers
   match. A difference is explained (and checked), not hidden: that is what makes a match mean something.
 - **Translate, don't calculate.** Unit conversions by fixed factors, code lookups and definitional arithmetic (rate ×

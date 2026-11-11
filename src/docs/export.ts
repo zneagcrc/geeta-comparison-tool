@@ -213,7 +213,6 @@ ul.jt summary{cursor:pointer}
 .jk{color:var(--text-secondary)}
 .jv{font-variant-numeric:tabular-nums;color:var(--text-primary);font-weight:700}
 .jv.empty{color:var(--neutral-mid-light);font-weight:400}
-.calc-notes{font-size:var(--font-size-small);color:var(--text-secondary);margin:.3rem 0 .8rem;padding-left:1.1rem}
 
 /* --- tables (both page types) --- */
 table{border-collapse:collapse;width:100%;margin:.2rem 0 .6rem;font-size:var(--font-size-small);background:var(--surface-field)}
@@ -256,6 +255,7 @@ td.check.ok .verdict{color:var(--paddock-green)}
 td.check.suspect{background:var(--status-error-surface)}
 td.check.suspect .verdict{color:var(--status-error)}
 td.check.none{color:var(--neutral-mid-light);font-style:italic}
+td.mscen{font-size:var(--font-size-fine);min-width:8rem}
 table.decisions tr.gap td{background:var(--status-error-surface);color:var(--status-error)}
 table.decisions tr.proposed td{background:var(--status-attention-surface)}
 
@@ -433,18 +433,81 @@ const mappingGroup = (p: string[]): { group: string; label: string[] } => {
   return { group: a, label: [b, c, ...rest].filter((x) => x !== undefined) };
 };
 
-const htmlMapping = (m: Mapping | null | undefined) => {
-  if (m === null)
-    return `<p class="note">Not traced (npx geeta-compare mapping trace).</p>`;
+/** A test's page of its input mapping, before its scenarios. */
+const MAPPING_SLUG = "input-mapping";
+
+type MergedRow = { path: string[]; values: unknown[]; scenarios: number; geeta: Landing[]; calculator: Landing[]; untraced: boolean; note?: string };
+type MergedMapping = { rows: MergedRow[]; adapterOnly: { field: string; values: unknown[] }[]; calculatorTraced: boolean; scenarios: number };
+
+/**
+ * A test's scenario mappings as one: every neutral input any scenario has, with everywhere it lands in any of them.
+ * An input reaches the calculator if it does in any scenario (one that only matters with other values, a zero share
+ * say, shows as used when another scenario uses it). undefined: no neutral format; null: no scenario traced.
+ */
+const mergeMappings = (pages: ScenarioPage[]): MergedMapping | null | undefined => {
+  if (pages.every((p) => p.mapping === undefined)) return undefined;
+  const ms = pages.map((p) => p.mapping).filter((m): m is Mapping => !!m);
+  if (!ms.length) return null;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const add = (to: Landing[], ls: Landing[]) => {
+    for (const l of ls) if (!to.some((x) => x.field === l.field && x.relation === l.relation)) to.push(l);
+  };
+  const rows = new Map<string, MergedRow & { untracedNote?: string }>();
+  const adapterOnly = new Map<string, unknown[]>();
+  for (const m of ms) {
+    for (const r of m.rows) {
+      const key = JSON.stringify(r.path);
+      let row = rows.get(key);
+      if (!row) rows.set(key, (row = { path: r.path, values: [], scenarios: 0, geeta: [], calculator: [], untraced: true }));
+      row.scenarios++;
+      if (!row.values.some((v) => same(v, r.value))) row.values.push(r.value);
+      add(row.geeta, r.geeta);
+      const traced = m.calculatorTraced && !/^(every|no other)/.test(r.note ?? "");
+      if (traced) {
+        row.untraced = false;
+        add(row.calculator, r.calculator);
+        if (r.note) row.note ??= r.note;
+      } else if (m.calculatorTraced) row.untracedNote ??= r.note;
+    }
+    for (const l of m.adapterOnly) {
+      const values = adapterOnly.get(l.field) ?? [];
+      if (!values.some((v) => same(v, l.value))) values.push(l.value);
+      adapterOnly.set(l.field, values);
+    }
+  }
+  // Rows of one group together, the groups in the order the scenarios first show them
+  const order = new Map<string, number>();
+  for (const r of rows.values()) {
+    const g = mappingGroup(r.path).group;
+    if (!order.has(g)) order.set(g, order.size);
+  }
+  const merged = [...rows.values()]
+    .map((r) => ({ ...r, note: r.untraced ? r.untracedNote : r.note }))
+    .sort((a, b) => order.get(mappingGroup(a.path).group)! - order.get(mappingGroup(b.path).group)!);
+  // The calculator's own inputs no neutral input reaches in any scenario
+  const reached = new Set(merged.flatMap((r) => r.calculator.map((l) => l.field)));
+  return {
+    rows: merged,
+    adapterOnly: [...adapterOnly].filter(([f]) => !reached.has(f)).map(([field, values]) => ({ field, values })),
+    calculatorTraced: ms.some((m) => m.calculatorTraced),
+    scenarios: ms.length,
+  };
+};
+
+/** Distinct values, the first few in full. */
+const valueList = (values: unknown[], max = 3) =>
+  values.slice(0, max).map(formatInput).join(", ") + (values.length > max ? ` (+${values.length - max} more)` : "");
+
+const htmlMapping = (m: MergedMapping | null | undefined) => {
+  if (m === null) return `<p class="note">Not traced (npx geeta-compare mapping trace).</p>`;
   if (!m) return `<p class="note">No neutral format for this test, so no mapping.</p>`;
-  type Row = Mapping["rows"][number];
-  const untraced = (r: Row) => !m.calculatorTraced || /^(every|no other)/.test(r.note ?? "");
-  const kind = (r: Row) => (untraced(r) ? "untraced" : r.calculator.length ? (r.geeta.length ? "both" : "calc") : "geeta");
+  type Row = MergedRow;
+  const kind = (r: Row) => (!m.calculatorTraced || r.untraced ? "untraced" : r.calculator.length ? (r.geeta.length ? "both" : "calc") : "geeta");
   const counts: Record<string, number> = { both: 0, geeta: 0, calc: 0, untraced: 0 };
   for (const r of m.rows) counts[kind(r)]++;
   const out: string[] = [];
   out.push(
-    `<p class="note">Each neutral input and where it lands in the GEETA workbook input and in ${he(C)}'s input. Traced, not declared: each input is changed in turn and the workbook fixture and ${he(C)}'s inputs are regenerated (src/docs/mapping.ts). <span class="mrel">=</span> copied, <span class="mrel">÷1000</span> a unit conversion, <span class="mrel">↦</span> looked up, <span class="mrel derived">ƒ</span> calculated from it (and others). For this scenario's values: an input that only matters with other values (a zero share, a switched-off option) shows as not used.</p>`,
+    `<p class="note">Each neutral input of the ${m.scenarios} scenario${m.scenarios === 1 ? "" : "s"}, and where it lands in the GEETA workbook input and in ${he(C)}'s input. Traced, not declared: each input is changed in turn and the workbook fixture and ${he(C)}'s inputs are regenerated (src/docs/mapping.ts). <span class="mrel">=</span> copied, <span class="mrel">÷1000</span> a unit conversion, <span class="mrel">↦</span> looked up, <span class="mrel derived">ƒ</span> calculated from it (and others). An input shows as not used by ${he(C)} only if no scenario passes it on.</p>`,
     `<div class="mfilter button-group" role="group" aria-label="Show">` +
       [
         ["all", `All ${m.rows.length}`],
@@ -458,7 +521,7 @@ const htmlMapping = (m: Mapping | null | undefined) => {
         .join("") +
       `</div>`,
   );
-  out.push(`<table class="mapping"><thead><tr><th>Neutral input</th><th>Value</th><th>GEETA</th><th>${he(C)}</th></tr></thead><tbody>`);
+  out.push(`<table class="mapping"><thead><tr><th>Neutral input</th><th>Values</th><th>GEETA</th><th>${he(C)}</th></tr></thead><tbody>`);
   let group = "";
   for (const r of m.rows) {
     const { group: g, label } = mappingGroup(r.path);
@@ -472,13 +535,16 @@ const htmlMapping = (m: Mapping | null | undefined) => {
         ? `<td class="muntraced">? ${he(m.calculatorTraced ? (r.note ?? "") : `${C} isn't run from the neutral scenario for this test`)}</td>`
         : htmlLandings(r.calculator, true, `not used by ${he(C)}`);
     const rowLabel = label.map((x) => (/^\d+$/.test(x) ? `row ${Number(x) + 1}` : x)).join(" › ");
-    out.push(`<tr data-kind="${k}"><td>${he(rowLabel || "(value)")}</td><td class="mval">${he(formatInput(r.value))}</td>${htmlLandings(r.geeta, false, "—")}${calcCell}</tr>`);
+    const some = r.scenarios < m.scenarios ? ` <span class="mschema">(${r.scenarios} of ${m.scenarios} scenarios)</span>` : "";
+    out.push(
+      `<tr data-kind="${k}"><td>${he(rowLabel || "(value)")}${some}</td><td class="mval" title="${he(r.values.map(formatInput).join(", "))}">${he(valueList(r.values))}</td>${htmlLandings(r.geeta, false, "—")}${calcCell}</tr>`,
+    );
   }
   out.push(`</tbody></table>`);
   if (m.adapterOnly.length)
     out.push(
       `<details class="mmore"><summary>${m.adapterOnly.length} ${he(C)} input(s) no neutral input reaches (the adapter's defaults and constants)</summary><table class="mapping"><tbody>${m.adapterOnly
-        .map((l) => `<tr><td>${landingField(l.field, true)}</td><td class="mval">${he(formatInput(l.value))}</td></tr>`)
+        .map((l) => `<tr><td>${landingField(l.field, true)}</td><td class="mval">${he(valueList(l.values))}</td></tr>`)
         .join("")}</tbody></table></details>`,
     );
   out.push(FILTER_SCRIPT);
@@ -518,21 +584,105 @@ const htmlCheck = (r: ResultRow) => {
   return `<td class="check ${c.ok ? "ok" : "suspect"}"><span class="verdict">${c.ok ? "✓" : "✗ Suspect"}</span>${he(c.kind)}: ${he(c.detail)}</td>`;
 };
 
-/** The mapping decisions (mapping.json) the adapter used for this scenario: what, the value, who decided and why. */
+/** A mapping decision's value for the calculator. */
 const decisionValue = (d: DecisionUse) => (d.gap ? "no decision" : d.to === null ? "no equivalent (left out)" : JSON.stringify(d.to));
-const htmlDecisions = (decisions: DecisionUse[]) => {
-  const rows = [...new Map(decisions.map((d) => [`${d.kind} ${d.key} ${d.value ?? ""}`, d])).values()];
-  return (
-    `<p class="note"><b>${he(C)} mapping decisions</b> (mapping.json): provider = decided by ${he(C)}'s provider; proposed = a draft not yet reviewed; no decision = a gap, the input was left out.</p>` +
-    `<table class="decisions"><thead><tr><th>Decision</th><th>GEETA value</th><th>${he(C)}</th><th>By</th><th>Reason</th></tr></thead><tbody>` +
-    rows
-      .map(
-        (d) =>
-          `<tr class="${d.gap ? "gap" : (d.by ?? "provider")}"><td>${he(d.kind)} ${he(d.key)}</td><td>${he(d.value ?? "")}</td><td>${he(decisionValue(d))}</td><td>${he(d.gap ? "" : (d.by ?? "provider"))}</td><td>${he(d.reason ?? "")}</td></tr>`,
-      )
-      .join("") +
-    `</tbody></table>`
+/** A test's adapter notes and mapping decisions, each once, with the scenarios it came up in. */
+const mappingSummary = (test: TestModel) => {
+  const notes = new Map<string, ScenarioPage[]>();
+  const decisions = new Map<string, { d: DecisionUse; pages: ScenarioPage[] }>();
+  for (const p of test.pages) {
+    for (const n of new Set(p.calc.notes)) notes.set(n, [...(notes.get(n) ?? []), p]);
+    for (const d of p.calc.decisions) {
+      const key = `${d.kind} ${d.key} ${d.value ?? ""}`;
+      const entry = decisions.get(key) ?? { d, pages: [] };
+      if (!entry.pages.includes(p)) entry.pages.push(p);
+      decisions.set(key, entry);
+    }
+  }
+  return { notes: [...notes].map(([note, pages]) => ({ note, pages })), decisions: [...decisions.values()] };
+};
+
+/** The scenarios an item came up in: every one, every one but a few, or the few. */
+const scenarioList = (test: TestModel, pages: ScenarioPage[], name: (p: ScenarioPage) => string) => {
+  const all = test.pages.length;
+  if (pages.length === all && all > 1) return "every scenario";
+  if (all > 3 && pages.length > all / 2) return `every scenario except ${test.pages.filter((p) => !pages.includes(p)).map(name).join(", ")}`;
+  return pages.map(name).join(", ");
+};
+const htmlScenarioLinks = (test: TestModel, pages: ScenarioPage[]) =>
+  scenarioList(test, pages, (p) => `<a href="${he(p.slug)}.html">${he(p.title)}</a>`);
+
+/** The right panel of the input mapping page: the adapter's notes and decisions over every scenario. */
+const htmlMappingSummary = (test: TestModel) => {
+  const { notes, decisions } = mappingSummary(test);
+  const out: string[] = ["<h2>Notes and decisions</h2>"];
+  const errors = test.pages.filter((p) => p.calc.status === "error");
+  if (test.pages.every((p) => p.calc.status === "none")) out.push(`<p class="note">${he(test.pages[0]?.calc.message ?? `No ${C} adapter for this test.`)}</p>`);
+  if (errors.length)
+    out.push(
+      `<h3>Adapter errors</h3><table class="decisions"><thead><tr><th>Error</th><th>Scenario</th></tr></thead><tbody>${errors
+        .map((p) => `<tr class="gap"><td>${he(p.calc.message)}</td><td><a href="${he(p.slug)}.html">${he(p.title)}</a></td></tr>`)
+        .join("")}</tbody></table>`,
+    );
+  out.push(`<h3>${he(C)} mapping notes</h3>`);
+  out.push(
+    notes.length
+      ? `<p class="note">What the adapter printed while mapping: inputs it left out or assumed, with why.</p><table class="mnotes"><thead><tr><th>Note</th><th>Scenarios</th></tr></thead><tbody>${notes
+          .map(({ note, pages }) => `<tr><td>${he(note)}</td><td class="mscen">${htmlScenarioLinks(test, pages)}</td></tr>`)
+          .join("")}</tbody></table>`
+      : `<p class="note">None.</p>`,
   );
+  out.push(`<h3>${he(C)} mapping decisions</h3>`);
+  out.push(
+    decisions.length
+      ? `<p class="note">From mapping.json: provider = decided by ${he(C)}'s provider; proposed = a draft not yet reviewed; no decision = a gap, the input was left out.</p>` +
+          `<table class="decisions"><thead><tr><th>Decision</th><th>GEETA value</th><th>${he(C)}</th><th>By</th><th>Reason</th><th>Scenarios</th></tr></thead><tbody>` +
+          decisions
+            .map(
+              ({ d, pages }) =>
+                `<tr class="${d.gap ? "gap" : (d.by ?? "provider")}"><td>${he(d.kind)} ${he(d.key)}</td><td>${he(d.value ?? "")}</td><td>${he(decisionValue(d))}</td><td>${he(d.gap ? "" : (d.by ?? "provider"))}</td><td>${he(d.reason ?? "")}</td><td class="mscen">${htmlScenarioLinks(test, pages)}</td></tr>`,
+            )
+            .join("") +
+          `</tbody></table>`
+      : `<p class="note">None.</p>`,
+  );
+  return out.join("");
+};
+
+/** A test's first page: how its inputs reach GEETA and the calculator, over every scenario. */
+const renderMappingPage = (test: TestModel) => {
+  const first = test.pages[0];
+  const h: string[] = [];
+  h.push(`<div class="scennav">${first ? `<a href="${he(first.slug)}.html">${he(first.title)} &rarr;</a>` : ""}</div>`);
+  h.push(`<div class="crumbs"><a href="../index.html">index</a> &rsaquo; ${test.group.map(he).join(" &rsaquo; ")}</div>`);
+  h.push(`<div class="meta"><div class="scentitle">Input mapping</div>`);
+  h.push(
+    `<div class="desc">How the inputs of the ${test.pages.length} scenario${test.pages.length === 1 ? "" : "s"} reach the GEETA workbook and ${he(C)}, and the adapter's notes and decisions.</div>`,
+  );
+  h.push(
+    `<dl class="legend">${[...Object.entries(RELATION_TITLE), ["ƒ", "derived: calculated from this input (and possibly others)"]]
+      .map(([k, v]) => `<dt>${he(k)}</dt><dd>${he(v)}</dd>`)
+      .join("")}</dl>`,
+  );
+  h.push(`</div>`);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${he(test.id)} / Input mapping</title>
+${headLinks("../")}
+</head><body class="scenario">
+${topBar("../")}
+<div class="scenario-body">
+<aside class="sidebar">${h.join("")}</aside>
+<div class="panes">
+<section class="pane inputs"><h2>Mapping</h2>${htmlMapping(mergeMappings(test.pages))}</section>
+<div class="gutter" role="separator" aria-orientation="vertical" title="Drag to resize &bull; double-click to reset"></div>
+<section class="pane results">${htmlMappingSummary(test)}</section>
+</div>
+</div>
+${GUTTER_SCRIPT}
+</body></html>
+`;
 };
 
 const htmlResults = (rows: ResultRow[], page: ScenarioPage) => {
@@ -549,10 +699,12 @@ const htmlResults = (rows: ResultRow[], page: ScenarioPage) => {
   return s + "</tbody></table>";
 };
 
-const renderPage = (test: TestModel, page: ScenarioPage, prev?: ScenarioPage, next?: ScenarioPage) => {
+const renderPage = (test: TestModel, page: ScenarioPage, prev?: { slug: string; title: string }, next?: ScenarioPage) => {
   const h: string[] = [];
   h.push(`<div class="scennav">${prev ? `<a href="${he(prev.slug)}.html">&larr; ${he(prev.title)}</a><br />` : ""}${next ? `<a href="${he(next.slug)}.html">${he(next.title)} &rarr;</a>` : ""}</div>`);
-  h.push(`<div class="crumbs"><a href="../index.html">index</a> &rsaquo; ${test.group.map(he).join(" &rsaquo; ")}</div>`);
+  h.push(
+    `<div class="crumbs"><a href="../index.html">index</a> &rsaquo; ${test.group.map(he).join(" &rsaquo; ")} &rsaquo; <a href="${MAPPING_SLUG}.html">Input mapping</a></div>`,
+  );
   h.push(`<div class="meta"><div class="scentitle">${he(page.title)}</div>`);
   if (page.isBase) h.push(`<div class="tag base">Base / reference scenario &mdash; not published; shown for the complete input set.</div>`);
   if (page.description) h.push(`<div class="desc">${he(page.description)}</div>`);
@@ -564,9 +716,8 @@ const renderPage = (test: TestModel, page: ScenarioPage, prev?: ScenarioPage, ne
   // Three views of the same scenario: neutral (methodology terms), GEETA (the workbook test input) and what the
   // adapter gave the calculator
   const inputs: string[] = [
-    `<h2>Inputs</h2><nav class="inputnav"><a href="#in-map">Mapping</a><a href="#in-neutral">Neutral</a><a href="#in-geeta">GEETA</a><a href="#in-calc">${he(C)}</a></nav>`,
+    `<h2>Inputs</h2><nav class="inputnav"><a href="#in-neutral">Neutral</a><a href="#in-geeta">GEETA</a><a href="#in-calc">${he(C)}</a><a href="${MAPPING_SLUG}.html">Mapping</a></nav>`,
   ];
-  inputs.push(`<details class="inset" id="in-map" open><summary>Mapping: neutral &rarr; GEETA and ${he(C)}</summary>${htmlMapping(page.mapping)}</details>`);
   inputs.push(`<details class="inset" id="in-neutral" open><summary>Neutral</summary>`);
   inputs.push(`<p class="note">The scenario in the neutral format (docs/neutral-scenarios.md): activity data in the methodology's terms, converted from the workbook test input.</p>`);
   if (page.neutral?.value !== undefined) {
@@ -600,8 +751,12 @@ const renderPage = (test: TestModel, page: ScenarioPage, prev?: ScenarioPage, ne
 
   const results: string[] = ["<h2>Results</h2>"];
   if (page.calc.status !== "ok") results.push(`<p class="note"><b>${he(C)}:</b> ${he(page.calc.message)}</p>`);
-  if (page.calc.notes.length) results.push(`<p class="note"><b>${he(C)} mapping notes:</b></p><ul class="calc-notes">${page.calc.notes.map((n) => `<li>${he(n)}</li>`).join("")}</ul>`);
-  if (page.calc.decisions.length) results.push(htmlDecisions(page.calc.decisions));
+  const notes = new Set(page.calc.notes).size;
+  const decisions = new Set(page.calc.decisions.map((d) => `${d.kind} ${d.key} ${d.value ?? ""}`)).size;
+  if (notes || decisions)
+    results.push(
+      `<p class="note">The adapter made ${[notes && `${notes} mapping note${notes === 1 ? "" : "s"}`, decisions && `${decisions} mapping decision${decisions === 1 ? "" : "s"}`].filter(Boolean).join(" and ")} for this scenario: see <a href="${MAPPING_SLUG}.html">Input mapping</a>.</p>`,
+    );
   results.push(htmlResults(page.results, page));
   for (const fo of page.followOns) {
     results.push(`<h3>Follow-on &rarr; ${he(fo.test)}</h3><table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>`);
@@ -742,9 +897,14 @@ const writeHtml = (dir: string) => {
       continue;
     }
     ix.push("<ul>");
+    // The input mapping page first, then the scenarios
+    fs.mkdirSync(path.join(dir, test.id), { recursive: true });
+    fs.writeFileSync(path.join(dir, test.id, `${MAPPING_SLUG}.html`), renderMappingPage(test));
+    pages++;
+    ix.push(`<li><a href="${he(test.id)}/${MAPPING_SLUG}.html">Input mapping</a></li>`);
+    const mappingPage = { slug: MAPPING_SLUG, title: "Input mapping" };
     test.pages.forEach((page, i) => {
-      fs.mkdirSync(path.join(dir, test.id), { recursive: true });
-      fs.writeFileSync(path.join(dir, test.id, `${page.slug}.html`), renderPage(test, page, test.pages[i - 1], test.pages[i + 1]));
+      fs.writeFileSync(path.join(dir, test.id, `${page.slug}.html`), renderPage(test, page, i ? test.pages[i - 1] : mappingPage, test.pages[i + 1]));
       pages++;
       const base = page.isBase ? `<span class="base">[base]</span>` : "";
       const desc = page.description ? `<span class="idesc">${he(page.description)}</span>` : "";
@@ -785,6 +945,44 @@ const md = (v: unknown) => String(v ?? "").replace(/\r?\n/g, " ").replace(/\|/g,
 const mdValue = (v: Value, format: (v: unknown) => string) => (isEmpty(v.value) ? "—" : md(format(v.value)));
 const anchor = (t: string) => t.toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-");
 
+/** A test's input mapping in Markdown: the merged mapping table, then the adapter's notes and decisions. */
+const writeMarkdownMapping = (test: TestModel, w: (line?: string) => void) => {
+  const scenarios = (pages: ScenarioPage[]) => scenarioList(test, pages, (p) => md(p.title));
+  const landings = (ls: Landing[]) => ls.map((l) => `${l.relation ?? "ƒ"} ${md(l.field)}`).join("<br>");
+  w(`### Input mapping: ${test.id}`);
+  w();
+  const m = mergeMappings(test.pages);
+  if (m === undefined) w("_No neutral format for this test, so no mapping._\n");
+  else if (m === null) w("_Not traced (npx geeta-compare mapping trace)._\n");
+  else {
+    w(`Each neutral input of the ${m.scenarios} scenario(s), and where it lands in the GEETA workbook input and in ${C}'s input (= copied, ↦ looked up, ƒ calculated from it).`);
+    w();
+    w(`| Neutral input | Values | GEETA | ${C} |`);
+    w("|---|---|---|---|");
+    for (const r of m.rows) {
+      const calc = !m.calculatorTraced || r.untraced ? `? ${md(r.note ?? "not traced")}` : r.calculator.length ? landings(r.calculator) : `_not used by ${C}_`;
+      w(`| ${md(r.path.join(" › "))}${r.scenarios < m.scenarios ? ` (${r.scenarios} of ${m.scenarios})` : ""} | ${md(valueList(r.values))} | ${landings(r.geeta) || "—"} | ${calc} |`);
+    }
+    w();
+  }
+  const { notes, decisions } = mappingSummary(test);
+  if (notes.length) {
+    w(`${C} mapping notes:`);
+    w();
+    for (const { note, pages } of notes) w(`- ${md(note)} _(${scenarios(pages)})_`);
+    w();
+  }
+  if (decisions.length) {
+    w(`${C} mapping decisions (mapping.json):`);
+    w();
+    w("| Decision | GEETA value | " + C + " | By | Reason | Scenarios |");
+    w("|---|---|---|---|---|---|");
+    for (const { d, pages } of decisions)
+      w(`| ${md(`${d.kind} ${d.key}`)} | ${md(d.value ?? "")} | ${md(decisionValue(d))} | ${d.gap ? "" : (d.by ?? "provider")} | ${md(d.reason ?? "")} | ${scenarios(pages)} |`);
+    w();
+  }
+};
+
 const writeMarkdown = (file: string) => {
   const out: string[] = [];
   const w = (line = "") => out.push(line);
@@ -803,6 +1001,7 @@ const writeMarkdown = (file: string) => {
   w();
   for (const test of models) {
     w(`- [${test.id}](#${anchor(test.id)}) _(${test.group.join(" > ")})_`);
+    if (!test.missing) w(`  - [Input mapping](#${anchor(`Input mapping: ${test.id}`)})`);
     for (const p of test.pages) w(`  - [${p.title}](#${anchor(heading(p))})`);
   }
   w();
@@ -821,6 +1020,7 @@ const writeMarkdown = (file: string) => {
       w();
       continue;
     }
+    writeMarkdownMapping(test, w);
     for (const p of test.pages) {
       w(`### ${heading(p)}`);
       w();
@@ -858,21 +1058,6 @@ const writeMarkdown = (file: string) => {
       w("#### Results");
       w();
       if (p.calc.status !== "ok") w(`_${C}: ${md(p.calc.message)}_\n`);
-      if (p.calc.notes.length) {
-        w(`${C} mapping notes:`);
-        w();
-        for (const n of p.calc.notes) w(`- ${md(n)}`);
-        w();
-      }
-      if (p.calc.decisions.length) {
-        w(`${C} mapping decisions (mapping.json):`);
-        w();
-        w("| Decision | GEETA value | " + C + " | By | Reason |");
-        w("|---|---|---|---|---|");
-        for (const d of [...new Map(p.calc.decisions.map((d) => [`${d.kind} ${d.key} ${d.value ?? ""}`, d])).values()])
-          w(`| ${md(`${d.kind} ${d.key}`)} | ${md(d.value ?? "")} | ${md(decisionValue(d))} | ${d.gap ? "" : (d.by ?? "provider")} | ${md(d.reason ?? "")} |`);
-        w();
-      }
       if (p.results.length) {
         const showDifference = p.calc.status === "ok" && p.results.some((r) => r.calcDiffers);
         w(`| Result | NIR | GEETA | ${C} |${showDifference ? " Automatic findings | LLM explanation | Check |" : ""}`);
