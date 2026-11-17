@@ -24,8 +24,14 @@ export type MappingRow = {
   note?: string;
 };
 
-/** The scenario's mapping, and what the adapter gave the calculator that no neutral input reaches (defaults, constants). */
-export type Mapping = { rows: MappingRow[]; adapterOnly: Landing[]; calculatorTraced: boolean };
+/** How a trace went: calculator runs, time in the calculator and in all, inputs settled by batches, inputs with a hint. */
+export type TraceStats = { runs: number; calcMs: number; ms: number; inputs: number; batched: number; hinted: number };
+
+/**
+ * The scenario's mapping, and what the adapter gave the calculator that no neutral input reaches (defaults, constants).
+ * A cached trace also says which test it belongs to, when it was made and how it went (older caches don't).
+ */
+export type Mapping = { rows: MappingRow[]; adapterOnly: Landing[]; calculatorTraced: boolean; test?: string; tracedAt?: number; stats?: TraceStats };
 
 type Leaf = { path: string[]; value: unknown };
 
@@ -147,14 +153,31 @@ const nudge = (v: unknown, at: string[]): unknown[] => {
 /** A string no workbook lookup or calculator knows: enough to see which workbook fields a string is copied to. */
 const SENTINEL = "⟨traced⟩";
 
+/**
+ * Tests whose captureInputsWithoutCalculating gave the same inputs as calculateAndCaptureInputs on their first scenario
+ * (true), or different ones (false: that test is traced with the calculation).
+ */
+const captureOnlyChecked = new Map<string, boolean>();
+
 /** The calculator's inputs for a neutral scenario, without calculating where the calculator allows it; throws on invalid input. */
 const inputsFor = (calc: Calculator, module: NeutralModule, s: any): InputCall[] | undefined => {
   // The calculator's own entry point from a neutral scenario, else its adapter on the workbook fixture regenerated from it
   const adapter = calc.adapters[module.test];
   const results = calc.neutralResults?.[module.test] ?? (adapter && ((n: any) => adapter(module.toVeerg(n))));
   if (!results) return undefined;
-  if (calc.captureInputsWithoutCalculating) return quiet(() => calc.captureInputsWithoutCalculating!(() => results(s)));
-  return calc.calculateAndCaptureInputs ? quiet(() => calc.calculateAndCaptureInputs!(() => results(s))).inputs : undefined;
+  const calculating = () => quiet(() => calc.calculateAndCaptureInputs!(() => results(s))).inputs;
+  if (calc.captureInputsWithoutCalculating) {
+    const only = () => quiet(() => calc.captureInputsWithoutCalculating!(() => results(s)));
+    if (!calc.calculateAndCaptureInputs) return only();
+    // Trusted only once both ways gave the same inputs for a scenario of the test
+    if (!captureOnlyChecked.has(module.test)) {
+      const same = JSON.stringify(only()) === JSON.stringify(calculating());
+      captureOnlyChecked.set(module.test, same);
+      if (!same) progress(`  ${module.test}: captureInputsWithoutCalculating gives other inputs than calculateAndCaptureInputs, so it is traced with the calculation`);
+    }
+    if (captureOnlyChecked.get(module.test)) return only();
+  }
+  return calc.calculateAndCaptureInputs ? calculating() : undefined;
 };
 
 // --- progress (a calculator-side trace can run for many minutes per scenario) ---------
@@ -162,10 +185,35 @@ const inputsFor = (calc: Calculator, module: NeutralModule, s: any): InputCall[]
 const PROGRESS_EVERY = 10_000;
 const duration = (ms: number) => (ms < 90_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 60_000).toFixed(1)} min`);
 /** A progress line on stderr, with the time of day (a long trace is often left running). */
-export const progress = (line: string) => process.stderr.write(`${new Date().toTimeString().slice(0, 8)} ${line}\n`);
+export const progress = (line: string) =>
+  process.stderr.write(`${new Date().toTimeString().slice(0, 8)} ${worker ? `w${worker.index} ` : ""}${line}\n`);
+
+/**
+ * Set in the worker processes of a parallel trace (`mapping trace --jobs N`): which one this is, and the folder where the
+ * workers claim scenarios, so each scenario is traced once.
+ */
+export const worker = (() => {
+  const m = /^(\d+)\/(\d+)$/.exec(process.env.GEETA_TRACE_WORKER ?? "");
+  return m && process.env.GEETA_TRACE_CLAIMS ? { index: Number(m[1]), count: Number(m[2]), claims: process.env.GEETA_TRACE_CLAIMS } : undefined;
+})();
+
+// --- hints: what earlier traces found, so a trace can test many inputs at once --------
+
+/**
+ * What an earlier trace found for an input: its value carried into calculator fields (copied or converted), not used by
+ * the calculator at all, or anything else (looked up, worked out, a share, failing validation). A hint only decides
+ * which inputs are tried together; the trace still finds every landing itself, so a wrong hint costs runs, never results.
+ */
+type Hint = "carried" | "unused" | "other";
+const CARRIED = new Set(["=", "×100", "÷100", "×1000", "÷1000", "as %"]);
+const hintOf = (r: MappingRow): Hint =>
+  r.note ? "other" : !r.calculator.length ? "unused" : typeof r.value === "number" && r.calculator.every((l) => CARRIED.has(l.relation ?? "")) ? "carried" : "other";
+const pathKey = (p: string[]) => p.join("\u0000");
 
 /** Calculator runs of the trace in progress (for its progress lines and its summary). */
 const run = { count: 0, ms: 0 };
+/** The inputs of the trace in progress: how many, how many batches settled, how many had a hint. */
+let traced = { inputs: 0, batched: 0, hinted: 0 };
 
 /** Whether a calculator field carries an input's value: its new value copied or converted from the input's new value, and its old value (if it had one) from the old one the same way. */
 const carries = (before: number, after: number, fieldBefore: unknown, fieldAfter: unknown) => {
@@ -187,6 +235,7 @@ const traceMapping = (
   calc: Calculator,
   baseCalc: Map<string, unknown> | undefined,
   label?: string,
+  hints?: Map<string, Hint>,
 ): MappingRow[] => {
   const baseFixture = flatFixture(module.toVeerg(neutral));
   const leaves = inputLeaves(neutral);
@@ -225,20 +274,37 @@ const traceMapping = (
     return (present.length ? present : fields).map((field) => ({ field, value: now.get(field), relation: relation(value, now.get(field)) }));
   };
 
-  // The numeric inputs of one table (a livestock class × month grid, say) are traced together: each is changed to a
-  // value of its own in one calculator run, and each calculator field that changed is credited to the input whose value
-  // it carries. A field no single input accounts for (worked out from several of them, or looked up) splits the batch in
-  // two, down to single inputs. A batch the calculator rejects is split once more; if a half is rejected too, its inputs
-  // are traced one at a time. Single inputs are traced on their own below.
+  // Batches: many inputs tried in one calculator run, each settled from what changed. Inputs a batch can't settle are
+  // traced on their own below.
+  //
+  // Numbers: each input of a batch is changed to a value of its own, and each calculator field that changed is credited
+  // to the input whose value it carries. A field no single input accounts for (worked out from several, or looked up)
+  // splits the batch in two, down to single inputs. Without hints, a batch is one table (a livestock class × month
+  // grid, say), and one the calculator rejects is split once more; if a half is rejected too, its inputs are traced one
+  // at a time. Numbers an earlier trace found carried or unused go in one batch for the whole scenario, split as often as
+  // it takes.
+  //
+  // Other values an earlier trace found unused (names, options, flags): every one changed to each value it would be
+  // tried with, all at once. Nothing changing in the calculator settles them all; anything changing splits the batch.
   const batched = new Map<number, string[]>();
+  const hintFor = (i: number) => hints?.get(pathKey(leaves[i].path));
+  const hinted = leaves.filter((_, i) => hintFor(i)).length;
   if (baseCalc && batching()) {
     const groups = new Map<string, number[]>();
+    const wide: number[] = [];
+    const unused: number[] = [];
     leaves.forEach((l, i) => {
-      if (typeof l.value !== "number") return;
+      const h = hintFor(i);
+      if (typeof l.value !== "number") {
+        if (h === "unused") unused.push(i);
+        return;
+      }
+      if (h === "carried" || h === "unused") return void wide.push(i);
+      if (h === "other") return;
       const g = l.path.slice(0, -2).join("\u0000");
       groups.set(g, [...(groups.get(g) ?? []), i]);
     });
-    const resolve = (ids: number[], rejectedBefore: boolean): void => {
+    const resolve = (ids: number[], rejections: number): void => {
       if (ids.length < 2) return;
       current = ids[0];
       batchSize = ids.length;
@@ -247,22 +313,46 @@ const traceMapping = (
       for (const [id, v] of values) s = setAt(s, leaves[id].path, v);
       const now = runCalc(s);
       const half = Math.ceil(ids.length / 2);
-      const split = (rejected: boolean) => {
-        resolve(ids.slice(0, half), rejected);
-        resolve(ids.slice(half), rejected);
+      const split = (left: number) => {
+        resolve(ids.slice(0, half), left);
+        resolve(ids.slice(half), left);
       };
-      if (!now) return rejectedBefore ? undefined : split(true);
+      if (!now) return rejections > 0 ? split(rejections - 1) : undefined;
       const fields = new Map(ids.map((id) => [id, [] as string[]]));
       for (const f of changed(baseCalc, now)) {
         const who = ids.filter((id) => carries(leaves[id].value as number, values.get(id)!, baseCalc.get(f), now.get(f)));
-        if (who.length !== 1) return split(false);
+        if (who.length !== 1) return split(Math.max(rejections, 1));
         fields.get(who[0])!.push(f);
       }
       for (const [id, fs] of fields) batched.set(id, fs);
     };
-    for (const ids of groups.values()) resolve(ids, false);
+    resolve(wide, Infinity);
+    for (const ids of groups.values()) resolve(ids, 1);
+    const confirmUnused = (ids: number[]): void => {
+      if (ids.length < 2) return;
+      current = ids[0];
+      batchSize = ids.length;
+      const tries = new Map(ids.map((id) => [id, nudge(leaves[id].value, leaves[id].path)]));
+      const half = Math.ceil(ids.length / 2);
+      for (let k = 0; k < Math.max(...[...tries.values()].map((t) => t.length)); k++) {
+        let s = neutral;
+        for (const id of ids) if (k < tries.get(id)!.length) s = setAt(s, leaves[id].path, tries.get(id)![k]);
+        const now = runCalc(s);
+        if (!now || changed(baseCalc, now).length) {
+          confirmUnused(ids.slice(0, half));
+          confirmUnused(ids.slice(half));
+          return;
+        }
+      }
+      for (const id of ids) batched.set(id, []);
+    };
+    // An input with no other value to try is settled below without a run
+    confirmUnused(unused.filter((id) => nudge(leaves[id].value, leaves[id].path).length));
     batchSize = 0;
   }
+  if (label && baseCalc && batched.size)
+    progress(`  ${label}: ${batched.size} of ${leaves.length} inputs settled in batches (${run.count} runs${hinted ? `, ${hinted} inputs with hints from earlier traces` : ""})`);
+  traced = { inputs: leaves.length, batched: batched.size, hinted };
 
   return leaves
     .map(({ path: at, value }, i) => {
@@ -287,6 +377,11 @@ const traceMapping = (
         }
         const now = batched.has(i) ? undefined : runCalc(s);
         if (now) calcFields = [...new Set([...(calcFields ?? []), ...changed(baseCalc!, now)])];
+      }
+      // A number the calculator rejects higher (a fraction near 1, say) may take a lower value: the value a batch would try
+      if (baseCalc && calcFields === undefined && typeof value === "number" && value !== 0) {
+        const now = runCalc(setAt(neutral, at, batchValue(value, 0)));
+        if (now) calcFields = changed(baseCalc, now);
       }
       let note: string | undefined;
       // A share that can't change alone: move some of it to (or from) a sibling, and keep what changes with every sibling
@@ -324,37 +419,142 @@ const traceMapping = (
     });
 };
 
-/** A scenario's trace without the cache, and the calculator runs it took (for checks comparing batched and single-input traces). */
-export const traceUncached = (module: NeutralModule, neutral: any, calc: Calculator) => {
+
+/** Only GEETA's side of a scenario's mapping: where each neutral input lands in the workbook. Needs no calculator. */
+export const traceGeetaSide = (module: NeutralModule, neutral: any): MappingRow[] =>
+  traceMapping(module, neutral, { name: "" } as Calculator, undefined);
+
+/**
+ * A scenario's trace without the cache, and the calculator runs it took (for checks comparing batched, hinted and
+ * single-input traces). `hintsFrom`: the rows of an earlier trace to take hints from.
+ */
+export const traceUncached = (module: NeutralModule, neutral: any, calc: Calculator, hintsFrom?: MappingRow[]) => {
   const base = inputsFor(calc, module, neutral);
-  const rows = traceMapping(module, neutral, calc, base && flatInputs(base));
-  return { rows, runs: run.count };
+  const hints = hintsFrom && new Map(hintsFrom.map((r) => [pathKey(r.path), hintOf(r)]));
+  const rows = traceMapping(module, neutral, calc, base && flatInputs(base), undefined, hints);
+  return { rows, runs: run.count, ...traced };
 };
 
 // --- cache ------------------------------------------------------------------------
+//
+// <docsDir>/.mapping-cache.json holds every trace, keyed by what it depends on. The workers of a parallel trace read it
+// but don't write it: each writes the traces it makes to a shard of its own (.mapping-cache.w<n>.json, with the keys it
+// used), and the command that started them merges the shards into the cache when they finish. A shard left by an
+// interrupted run is merged the next time the cache is read.
 
 const CACHE_VERSION = 3;
 let lastSave = Date.now();
-let cache: { file: string; entries: Record<string, Mapping>; used: Set<string> } | undefined;
+type Cache = { file: string; entries: Record<string, Mapping>; used: Set<string>; fresh: Set<string> };
+let cache: Cache | undefined;
+
+const cacheFileOf = (calc: Calculator) => inWorkspace(calc.docsDir, ".mapping-cache.json");
+const SHARD = /^\.mapping-cache\.w(\d+)\.json$/;
+const shardFile = (file: string, index: number) => path.join(path.dirname(file), `.mapping-cache.w${index}.json`);
+const shardsOf = (file: string) =>
+  fs.existsSync(path.dirname(file)) ? fs.readdirSync(path.dirname(file)).filter((f) => SHARD.test(f)).map((f) => path.join(path.dirname(file), f)) : [];
+type Shard = { entries: Record<string, Mapping>; used: string[]; stats?: Partial<typeof traceStats> };
+const readShard = (f: string): Shard | undefined => {
+  try {
+    return JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch {
+    return undefined; // cut short
+  }
+};
+
 const cacheFor = (calc: Calculator) => {
-  const file = inWorkspace(calc.docsDir, ".mapping-cache.json");
-  if (cache?.file !== file) cache = { file, entries: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {}, used: new Set() };
+  const file = cacheFileOf(calc);
+  if (cache?.file !== file) {
+    const entries: Record<string, Mapping> = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+    // Shards from an interrupted run (a worker leaves the others' shards alone: it reads them for hints)
+    if (!worker) for (const f of shardsOf(file)) Object.assign(entries, readShard(f)?.entries ?? {});
+    cache = { file, entries, used: new Set(), fresh: new Set() };
+    hintIndex = undefined;
+  }
   return cache;
 };
 
-/** Scenario mappings traced this run (slow: the calculator runs once per input value tried), read from the cache, and left untraced. */
-export const traceStats = { traced: 0, cached: 0, untraced: 0 };
+/**
+ * Scenario mappings traced this run, read from the cache, left untraced, and (in a worker) left to another worker; and
+ * over the scenarios traced: calculator runs, time in the calculator and in all, inputs, inputs settled in batches.
+ */
+export const traceStats = { traced: 0, cached: 0, untraced: 0, elsewhere: 0, runs: 0, calcMs: 0, ms: 0, inputs: 0, batched: 0 };
 
 /** The cache file, relative to the workspace (for progress messages). */
 export const mappingCacheFile = (calc: Calculator) => path.join(calc.docsDir, ".mapping-cache.json");
 
-/** Writes the cache. `prune` (a run over every scenario) drops entries this run didn't use; a filtered run keeps them. */
+/**
+ * Writes the cache. `prune` (a run over every scenario) drops entries this run didn't use; a filtered run keeps them.
+ * A worker writes its shard instead. Shards are removed once merged.
+ */
 export const saveMappingCache = (prune = false) => {
   if (!cache) return;
-  const { entries, used } = cache;
-  if (prune) for (const k of Object.keys(entries)) if (!used.has(k)) delete entries[k];
+  const { entries, used, fresh } = cache;
   fs.mkdirSync(path.dirname(cache.file), { recursive: true });
-  fs.writeFileSync(cache.file, JSON.stringify(entries) + "\n");
+  if (worker) {
+    const shard: Shard = { entries: Object.fromEntries([...fresh].map((k) => [k, entries[k]])), used: [...used], stats: traceStats };
+    const f = shardFile(cache.file, worker.index);
+    fs.writeFileSync(`${f}.tmp`, JSON.stringify(shard) + "\n");
+    fs.renameSync(`${f}.tmp`, f);
+    return;
+  }
+  if (prune) for (const k of Object.keys(entries)) if (!used.has(k)) delete entries[k];
+  fs.writeFileSync(`${cache.file}.tmp`, JSON.stringify(entries) + "\n");
+  fs.renameSync(`${cache.file}.tmp`, cache.file);
+  for (const f of shardsOf(cache.file)) fs.rmSync(f, { force: true });
+};
+
+/**
+ * Before and after the workers of a parallel trace: shards merged into the cache. After them (`counts`), their counts
+ * are added up and the keys they used kept, so `prune` (a run over every scenario that every worker finished) can drop
+ * traces no scenario uses any more.
+ */
+export const mergeTraceShards = (calc: Calculator, { counts = false, prune = false } = {}) => {
+  cache = undefined;
+  const c = cacheFor(calc);
+  const shards = shardsOf(c.file).map(readShard).filter((s): s is Shard => !!s);
+  if (counts)
+    for (const s of shards) {
+      for (const k of s.used) c.used.add(k);
+      for (const [k, v] of Object.entries(s.stats ?? {})) (traceStats as Record<string, number>)[k] += v as number;
+    }
+  saveMappingCache(prune && shards.length > 0);
+};
+
+// Hints: per test, what the latest trace of each input found (traces in older caches, which don't say their test, count
+// for every test). Workers also read the other workers' shards, so their later scenarios get hints from all of them.
+let hintIndex: { tests: Map<string, Map<string, Hint>>; shards: Map<string, number> } | undefined;
+const addHints = (m: Mapping) => {
+  if (!m.calculatorTraced || !hintIndex) return;
+  const test = m.test ?? "*";
+  const hints = hintIndex.tests.get(test) ?? new Map<string, Hint>();
+  hintIndex.tests.set(test, hints);
+  for (const r of m.rows) hints.set(pathKey(r.path), hintOf(r));
+};
+const hintsFor = (c: Cache, test: string): Map<string, Hint> => {
+  if (!hintIndex) {
+    hintIndex = { tests: new Map(), shards: new Map() };
+    for (const m of Object.values(c.entries).sort((a, b) => (a.tracedAt ?? 0) - (b.tracedAt ?? 0))) addHints(m);
+  }
+  if (worker)
+    for (const f of shardsOf(c.file)) {
+      if (f === shardFile(c.file, worker.index)) continue;
+      const mtime = fs.statSync(f, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+      if (hintIndex.shards.get(f) === mtime) continue;
+      hintIndex.shards.set(f, mtime);
+      for (const m of Object.values(readShard(f)?.entries ?? {})) addHints(m);
+    }
+  return new Map([...(hintIndex.tests.get("*") ?? []), ...(hintIndex.tests.get(test) ?? [])]);
+};
+
+/** A worker's claim on a scenario: false when another worker has it. */
+const claim = (key: string) => {
+  if (!worker) return true;
+  try {
+    fs.closeSync(fs.openSync(path.join(worker.claims, key), "wx"));
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -381,23 +581,40 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
   else if (!trace && base) {
     traceStats.untraced++;
     return null;
+  } else if (!claim(key)) {
+    traceStats.elsewhere++;
+    return null;
   } else {
     traceStats.traced++;
     const baseCalc = base ? flatInputs(base) : undefined;
     const t0 = Date.now();
-    const rows = traceMapping(module, neutral, calc, baseCalc, label);
-    if (label && baseCalc) progress(`  ${label}: traced in ${duration(Date.now() - t0)} (${run.count} runs of ${calc.name})`);
+    const rows = traceMapping(module, neutral, calc, baseCalc, label, baseCalc && hintsFor(c, module.test));
+    const ms = Date.now() - t0;
+    const stats: TraceStats = { runs: run.count, calcMs: run.ms, ms, ...traced };
+    if (baseCalc) {
+      for (const k of ["runs", "calcMs", "ms", "inputs", "batched"] as const) traceStats[k] += stats[k];
+      if (label)
+        progress(
+          `  ${label}: traced in ${duration(ms)} (${run.count} runs of ${calc.name}, ${ms ? Math.round((100 * run.ms) / ms) : 0}% of the time in ${calc.name}; ` +
+            `${traced.batched} of ${traced.inputs} inputs settled in batches)`,
+        );
+    }
     const reached = new Set(rows.flatMap((r) => r.calculator.map((l) => l.field)));
     c.entries[key] = {
       rows,
       adapterOnly: [...(baseCalc ?? [])].filter(([f]) => !reached.has(f)).map(([field, value]) => ({ field, value })),
       calculatorTraced: !!baseCalc,
+      test: module.test,
+      tracedAt: Date.now(),
+      ...(baseCalc ? { stats } : {}),
     };
-    // Save as it goes, so an interrupted first run keeps what it traced
-    if (Date.now() - lastSave > 30_000) {
+    c.fresh.add(key);
+    addHints(c.entries[key]);
+    // Save as it goes, so an interrupted run keeps what it traced (a worker's shard is small: only its own traces)
+    if (worker ? !!baseCalc : Date.now() - lastSave > 30_000) {
       saveMappingCache();
       lastSave = Date.now();
-      if (label && baseCalc) progress(`  (saved ${Object.keys(c.entries).length} traces to ${mappingCacheFile(calc)}; stopping now keeps them)`);
+      if (label && baseCalc && !worker) progress(`  (saved ${Object.keys(c.entries).length} traces to ${mappingCacheFile(calc)}; stopping now keeps them)`);
     }
   }
   return c.entries[key];

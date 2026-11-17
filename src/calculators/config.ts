@@ -6,7 +6,8 @@
 //       "name": "My Calculator",                         // its name: shown in reports, and its id is made from it
 //       "release": "npm:@acme/emissions",                // where its releases come from (below)
 //       "version": "latest",                             // or an exact version / tag
-//       "plugin": "calculators/my-calculator/index.ts"   // optional; this is the default
+//       "plugin": "calculators/my-calculator/index.ts",  // optional; this is the default
+//       "interface": "../my-calculator/src/types"        // optional: what defines its inputs (src/calculators/interface.ts)
 //     }
 //   ]
 //
@@ -36,6 +37,11 @@ export type CalculatorEntry = {
   plugin?: string;
   /** For an API: the environment variable holding its key (never the key itself). */
   apiKeyEnv?: string;
+  /**
+   * The files or folders (relative to the workspace) that define its inputs, kept at each version so an upgrade can be
+   * adapted to from what changed (src/calculators/interface.ts). Default: the installed package; needed for one with no release.
+   */
+  interface?: string | string[];
 };
 
 export type ReleaseKind = "npm" | "github" | "folder" | "api" | "none";
@@ -144,6 +150,8 @@ export type LockEntry = {
   installed: string;
   /** For an API with an OpenAPI document: where it is (for working out the calculator's inputs). */
   openapi?: string;
+  /** The version installed before this one, after an upgrade (for `llm adapter --upgrade`). */
+  previous?: string;
 };
 type Lock = { calculators: Record<string, LockEntry> };
 

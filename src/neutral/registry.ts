@@ -9,6 +9,7 @@ import { ENTERIC_BEEF, ENTERIC_SHEEP, MANURE_BEEF, MANURE_SHEEP } from "./module
 import { PRIMARY, SECONDARY, poultryFromVeerg, poultryToVeerg } from "./poultry";
 import { enterpriseFromVeerg, enterpriseToVeerg } from "./enterprise";
 import { SCOPE3 } from "./modules/scope3";
+import { fieldToSpec, fromSpec as specToRelease, toSpec as releaseToSpec } from "./geeta-format";
 
 export type NeutralModule = {
   test: string;
@@ -58,7 +59,18 @@ const poultry: NeutralModule = {
   },
 };
 
-export const MODULES: NeutralModule[] = [
+/**
+ * A module that reads and writes the GEETA test set's own format: the specs are written in VEERG_0.0.0.3's, and
+ * geeta-format.ts translates from a newer release (its Schemas/renames.json).
+ */
+const inReleaseFormat = (m: NeutralModule): NeutralModule => ({
+  ...m,
+  fromVeerg: (input) => m.fromVeerg(releaseToSpec(m.test, input)),
+  toVeerg: (s) => specToRelease(m.test, m.toVeerg(s)),
+  ...(m.ignore ? { ignore: (field, input, neutral) => m.ignore!(fieldToSpec(m.test, field, input), releaseToSpec(m.test, input), neutral) } : {}),
+});
+
+const SPEC_MODULES: NeutralModule[] = [
   fromSpec(ENTERIC_FEEDLOT, "3.1-enteric-feedlot"),
   fromSpec(ENTERIC_BEEF, "3.2-enteric-beef"),
   fromSpec(ENTERIC_DAIRY, "3.3-enteric-dairy"),
@@ -100,6 +112,8 @@ export const MODULES: NeutralModule[] = [
     toVeerg: enterpriseToVeerg,
   })),
 ];
+
+export const MODULES: NeutralModule[] = SPEC_MODULES.map(inReleaseFormat);
 
 export const moduleFor = (test: string) => MODULES.find((m) => m.test === test);
 /** The module a neutral file belongs to, by its section. */

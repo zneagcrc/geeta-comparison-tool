@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { PACKAGE_ROOT, WORKSPACE, inWorkspace, workspaceConfig } from "./workspace";
 import { type LockEntry, type ResolvedEntry, calculatorEntry, definedCalculators, readLock, resolveCalculatorId, writeLock } from "./calculators/config";
 import { apiKey, requestJsonSync } from "./http";
+import { interfaceDiff, snapshotInterface } from "./calculators/interface";
 
 /** OpenAPI documents found while installing, by calculator id (recorded in the lock). */
 const apiDocs: Record<string, string> = {};
@@ -151,12 +152,26 @@ const main = async () => {
       installed: new Date().toISOString(),
       ...(apiDocs[id] ? { openapi: apiDocs[id] } : {}),
     };
+    // The version before an upgrade, kept until the next one
+    const previous = before && before.version !== version ? before.version : before?.previous;
+    if (previous) entry.previous = previous;
     lock.calculators[id] = entry;
     writeLock(lock);
     const change = !before ? "installed" : before.version === version ? "already at this version" : `upgraded from ${before.version}`;
     console.log(`  ${e.name} ${version}: ${change}`);
     if (before && before.version !== version)
       console.log(`  explanations recorded against ${before.version} will show as stale until they are reviewed (npm run explain -- status)`);
+    // Its interface at this version, and what changed since the last one (for adapting the adapters to an upgrade)
+    const snap = snapshotInterface(e, version);
+    if (!snap.dir) console.log(`  no interface snapshot kept: ${snap.note}`);
+    if (before && before.version !== version) {
+      const diff = interfaceDiff(id, before.version, version);
+      console.log(
+        diff.file
+          ? `  interface changes since ${before.version}: ${path.relative(WORKSPACE, diff.file)}; adapt the adapters with: npx geeta-compare llm adapter --all --upgrade --calculator ${id}`
+          : `  no interface changes recorded (${diff.note})`,
+      );
+    }
     for (const f of scaffold(e)) console.log(`  created ${f}`);
   }
   console.log("\nNext: write the adapters in the plug-in, then npm run test:veerg");

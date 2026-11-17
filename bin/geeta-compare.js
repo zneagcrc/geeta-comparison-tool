@@ -10,13 +10,14 @@ const COMMANDS = {
   install: ["src/install.ts", "Install the calculators defined in geeta.config.json (all, or the ids named) and record their versions"],
   fetch: ["src/geeta-fetch.ts", "Download the GEETA release pinned in geeta.config.json (or the one named)"],
   test: ["src/run-veerg-tests.ts", "Compare the calculator with GEETA: every test, or the tests and scenarios named"],
+  brief: ["src/brief-cli.ts", "The adapter brief of a test (or --all): its inputs, where GEETA takes them, labels, options, VEERG definitions, result names"],
   names: ["src/names-cli.ts", "The GEETA result names of a test, without their values (for writing adapters)"],
   docs: ["src/docs/export.ts", "Write the scenario docs (HTML and Markdown) to the calculator's docsDir; needs the mapping traced"],
   explain: ["src/explain/cli.ts", "Explanations: status, bundle, history, add (see README.md)"],
   neutral: ["src/neutral/cli.ts", "Neutral scenario format: check, export, to-veerg, run"],
   baseline: ["src/neutral/baseline.ts", "Adapter regression baseline: compare, save"],
-  llm: ["src/llm-cli.ts", "The LLM (geeta.config.json llm, key in .env): check it; llm adapter <Test>; llm explain <Test>"],
-  mapping: ["src/mapping-cli.ts", "Mapping decisions (mapping.json): gaps, undecided GEETA options, proposals; --check fails while any remain. mapping trace [Test ...]: trace the mapping for the docs"],
+  llm: ["src/llm-cli.ts", "The LLM (geeta.config.json llm): check it; llm adapter <Test> ... | --all [--upgrade]; llm explain <Test>; --agent ide for the agent in your editor"],
+  mapping: ["src/mapping-cli.ts", "Mapping decisions (mapping.json): gaps, undecided GEETA options, proposals; --check fails while any remain. mapping trace [Test ...] [--jobs N]: trace the mapping for the docs"],
 };
 
 const [command, ...args] = process.argv.slice(2);

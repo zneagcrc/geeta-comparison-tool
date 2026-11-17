@@ -6,12 +6,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { TEST_DIR, mergeScenario, readJson } from "../fixtures";
+import { INPUT_FIELDS_DIR, inputFieldsBaseName } from "../geeta-source";
 import type { CheckResult } from "../explain/checks";
 import { type Review, diagnoseCase } from "../explain/diagnose";
 import type { Finding } from "../explain/findings";
 import type { ExplanationRecord } from "../explain/store";
 import { moduleFor } from "../neutral/registry";
-import { type Mapping, progress, scenarioMapping, traceStats } from "./mapping";
+import { type Mapping, progress, scenarioMapping, traceStats, worker } from "./mapping";
 import { isExcluded } from "../comparison-config";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
@@ -19,7 +20,6 @@ import { type DecisionUse, decisionNotes, decisionUses, resetDecisionUses } from
 
 const { adapters, calculateAndCaptureInputs, name: calculatorName } = calculator();
 
-export const INPUT_FIELDS_DIR = path.resolve(TEST_DIR, "../InputFields");
 
 /** Scenario keys that aren't inputs or results. */
 const META = new Set(["Scenarios", "ScenarioFiles", "ScenarioName", "ScenarioDescription", "ScenarioNotes", "ScenarioExtends", "FollowOnTests", "__FormulaOverwritePolicy", "InputTables", "NIRResults"]);
@@ -80,12 +80,6 @@ type Labels = {
   cell: Map<string, { label?: string; unit?: string }>;
   /** Per table: column (ColumnNames) labels and field labels. */
   table: Map<string, { columns: Record<string, string>; fields: Record<string, { label?: string; unit?: string }> }>;
-};
-
-const inputFieldsBaseName = (excelFile: string) => {
-  let b = excelFile.replace(/\.xlsx?$/i, "").replace(/_WIP_v\d+$/i, "").replace(/_(Template|Clean)$/i, "");
-  if (/^Enterprise_/i.test(b)) return b;
-  return b.replace(/^\d+(?:_\d+)?_/, "");
 };
 
 const loadLabels = (excelFile: string | undefined): Labels => {
@@ -425,7 +419,8 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
     const anyShown = shown.length > 0;
     shown = shown.filter(({ name }) => !isExcluded(key, name));
     if (anyShown && !shown.length) continue;
-    if (opts.trace) progress(`[${n + 1}/${included.length}] ${key}: ${shown.length} scenario${shown.length === 1 ? "" : "s"}`);
+    // Workers of a parallel trace go through every test, each tracing the scenarios it claims: only their scenario lines show
+    if (opts.trace && !worker) progress(`[${n + 1}/${included.length}] ${key}: ${shown.length} scenario${shown.length === 1 ? "" : "s"}`);
     let lastNote = Date.now();
     const pages = shown.map(({ name, isBase }, i): ScenarioPage => {
       // A slow test says how far it has got every 15 seconds (a trace prints its own progress for each scenario)
@@ -474,7 +469,7 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
     const traced = traceStats.traced - before.traced;
     const cached = traceStats.cached - before.cached;
     const mapping = traced ? `, mapping traced for ${traced}${cached ? ` (${cached} cached)` : ""}` : "";
-    console.error(`  ${key}: ${pages.length} scenario${pages.length === 1 ? "" : "s"}, ${((Date.now() - started) / 1000).toFixed(1)}s${mapping}`);
+    if (!worker) console.error(`  ${key}: ${pages.length} scenario${pages.length === 1 ? "" : "s"}, ${((Date.now() - started) / 1000).toFixed(1)}s${mapping}`);
   }
   return models;
 };

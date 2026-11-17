@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { findTest, loadCases } from "../fixtures";
 import { MODULES, type NeutralModule, moduleFor, moduleForScenario } from "./registry";
-import { calculator } from "../calculators";
+import { calculator, calculatorIds } from "../calculators";
 import { WORKSPACE } from "../workspace";
 
 const ROOT = WORKSPACE;
@@ -84,7 +84,8 @@ if (command === "export") {
         const again = m.fromVeerg(generated);
         const lossless = canonical(neutral) === canonical(again);
         // The calculator's results from the neutral scenario must be the same before and after the round trip
-        const results = calculator().neutralResults?.[m.test];
+        // (no calculator defined yet: only the round trip is checked)
+        const results = calculatorIds.length ? calculator().neutralResults?.[m.test] : undefined;
         const sameResults = !results || canonical(quiet(() => results(neutral))) === canonical(quiet(() => results(again)));
         const diffs = fixtureDiffs(input, generated).filter((d) => !m.ignore?.(d.field, input, neutral));
         const ok = lossless && sameResults && !diffs.length;

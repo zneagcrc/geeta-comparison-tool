@@ -1,5 +1,6 @@
-// Downloads a public GEETA release (the workbooks zip and its test set) into geeta-releases/<release>/, checking every
-// file against the release's manifest.json. This is what calculator providers use; see geeta-source.ts for overriding
+// Downloads a GEETA release (the workbooks zip and its test set) into geeta-releases/<release>/, checking every file
+// against the release's manifest.json. A private repository's releases need a token in the workspace's .env
+// (GEETA_TOKEN, or the variable geeta.config.json "tokenEnv" names; see geeta-github.ts). This is what calculator providers use; see geeta-source.ts for overriding
 // it with local work in progress.
 //
 //   npm run geeta:fetch                     # the release pinned in geeta.config.json
@@ -10,9 +11,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { unzipSync } from "fflate";
 import { RELEASES_DIR, ROOT, geetaConfig } from "./geeta-source";
+import { downloadAsset } from "./geeta-github";
 
 /** The manifest toolingContract versions this tool can read (bumped when the fixture format changes). */
-const SUPPORTED_CONTRACTS = [1];
+const SUPPORTED_CONTRACTS = [1, 2];
 
 type Manifest = {
   release: string;
@@ -24,20 +26,22 @@ type Manifest = {
 
 const args = process.argv.slice(2);
 const force = args.includes("--force");
-const { repo, release: pinned } = geetaConfig();
+const { repo, release: pinned, tokenEnv, token } = geetaConfig();
 const release = args.find((a) => !a.startsWith("--")) ?? pinned;
 const target = path.join(RELEASES_DIR, release);
 
 const sha256 = (data: Uint8Array) => crypto.createHash("sha256").update(data).digest("hex");
 
 const download = async (asset: string): Promise<Uint8Array> => {
-  const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(release)}/${encodeURIComponent(asset)}`;
-  process.stdout.write(`Downloading ${asset} ... `);
-  const res = await fetch(url, { headers: { "User-Agent": "geeta-comparison-tool" } });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}${res.status === 404 ? ` (is ${release} a published release of ${repo}, with ${asset}?)` : ""}`);
-  const data = new Uint8Array(await res.arrayBuffer());
-  console.log(`${(data.length / 1048576).toFixed(1)} MB`);
-  return data;
+  process.stdout.write(`Downloading ${asset}${token ? ` (with the token in ${tokenEnv})` : ""} ... `);
+  try {
+    const data = await downloadAsset(repo, release, asset, tokenEnv, token);
+    console.log(`${(data.length / 1048576).toFixed(1)} MB`);
+    return data;
+  } catch (e) {
+    console.log("failed");
+    throw e;
+  }
 };
 
 /** A zip's entries by normalised relative path (some release zips use backslashes); refuses paths that leave the folder. */

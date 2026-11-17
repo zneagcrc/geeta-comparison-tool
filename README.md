@@ -30,6 +30,7 @@ From an empty folder to explained differences. Each step links to its section be
    npm install
    npm run geeta:fetch                # the GEETA test set
    ```
+   While the GEETA repository is private, put `GEETA_TOKEN=<GitHub token>` in `.env` first ("The GEETA test set").
 2. **Define your calculator** in `geeta.config.json` ("Adding a calculator"):
    ```json
    "calculators": [ { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" } ]
@@ -90,7 +91,7 @@ which version to use.
 ```json
 {
   "repo": "zneagcrc/GEETA",
-  "release": "VEERG_0.0.0.3",
+  "release": "VEERG_0.0.0.4",
   "calculators": [
     { "name": "Acme", "release": "npm:@acme/emissions", "version": "latest" }
   ]
@@ -122,12 +123,34 @@ plug-in `calculators/acme/index.ts`, its `mapping.json`, and the findings docume
 the plug-in's adapters, one test at a time: have the LLM write a first version (`npx geeta-compare llm adapter <Test>`,
 "Using an LLM") or write them yourself ("Developing adapters"), then `npm run typecheck` and `npm run test:veerg`.
 
-To upgrade, run `install` again: a `latest` calculator moves to the newest release (`upgraded from 1.2.3`), or change
-`version` first. The recorded version is part of every explanation's evidence, so explanations written against the
-old version show as stale until they are reviewed. With several calculators, choose one per command with
-`--calculator <id>`, or set `"calculator": "<id>"` in `geeta.config.json` as the default.
+With several calculators, choose one per command with `--calculator <id>`, or set `"calculator": "<id>"` in
+`geeta.config.json` as the default.
 
 npm's `latest` tag is the newest stable release; a calculator that publishes pre-releases may tag them (e.g. `beta`).
+
+### Upgrading a calculator
+
+Run `install` again: a `latest` calculator moves to the newest release (`upgraded from 1.2.3`), or change `version`
+first. The recorded version is part of every explanation's evidence, so explanations written against the old version
+show as stale until they are reviewed. Then adapt the adapters to the new version:
+
+1. **What changed.** Every `install` keeps a snapshot of the files that define the calculator's inputs at that version
+   (`.geeta/interfaces/<id>/<version>/`: its type declarations, schemas, README and changelog; for an API, its
+   OpenAPI document). When the version changes, it compares the snapshot with the previous version's and writes
+   `.geeta/upgrades/<id>/<old>..<new>.md`: the input names renamed (a name gone from much the same files a similar new
+   name is in: `massAppliedKg` → `massAppliedKilograms`), removed and added, the changed lines that recur (a number
+   that became `{ value, quality }` everywhere shows once, with a count), and the files added and removed. The full
+   difference is beside it (`.diff`). `geeta.lock.json` keeps the version before (`"previous"`). By default the snapshot
+   is taken from the installed package. For a calculator with no release (the plug-in brings it in), or to narrow a large
+   package down, give its entry `"interface"`: the files or folders, relative to the workspace, that define its inputs
+   (e.g. `"node_modules/acme-calculators/dist"`). The first upgrade after the first snapshot is the first one with a
+   record; before that, the agent works out the changes from the calculator's types and changelog.
+2. **Adapt the adapters.** `npx geeta-compare llm adapter --all --upgrade` gives the agent that summary and asks it to
+   change only what the new version requires: every mapping decision stays, and so does everything else the adapter
+   maps. Add hints for what you know (`hint:"numeric inputs are now { value } objects"`).
+3. **Check.** `npm run typecheck`, `npx geeta-compare baseline compare` (what moved since the baseline you saved),
+   `npm run test:veerg`, then `npx geeta-compare mapping trace`: the traces of the old version guide the new ones
+   ("How the trace works"), so the re-trace is much quicker than the first.
 
 ### Calculators released as an API
 
@@ -173,7 +196,8 @@ its key in the workspace's `.env` (`init` writes both, with `.env.example` to co
   "provider": "anthropic",
   "model": "claude-opus-5-5",
   "apiKeyEnv": "ANTHROPIC_API_KEY",
-  "auth": "key"
+  "auth": "key",
+  "agent": "claude-code"
 }
 ```
 
@@ -188,17 +212,45 @@ ANTHROPIC_API_KEY=sk-ant-...
 | `model` | The model the agent runs on, e.g. `claude-opus-5-5`, `claude-sonnet-5-5` |
 | `apiKeyEnv` | The environment variable (or `.env` entry) holding the key; the key itself never goes in `geeta.config.json` |
 | `auth` | `key` (default): only that key is used, and a run stops if it isn't set. `sign-in`: Claude Code's own sign-in (e.g. a Claude subscription) instead, and the key is ignored |
+| `agent` | `claude-code` (default): the commands run Claude Code themselves, as set above. `ide`: they write the task for the agent in your editor instead ("The agent in your editor", below), and the other settings aren't used |
 
 ```sh
 npx geeta-compare llm                          # the settings, and a check that the key works and the model exists (no tokens used)
 npx geeta-compare llm adapter Fuel             # Claude Code writes the adapter for a test (mapping decisions as "proposed")
 npx geeta-compare llm adapter Fuel hint:"Acme has no town gas" hint:"use the current car type, not pre-2004"
+npx geeta-compare llm adapter Fuel Fertiliser  # several tests, one session each, in order
+npx geeta-compare llm adapter --all --upgrade  # adapt every adapter to a new calculator version ("Upgrading a calculator")
 npx geeta-compare llm explain ManureManagement.Pigs   # builds the evidence bundle, then Claude Code explains the differences
+npx geeta-compare llm adapter Fuel --agent ide # this once, a task for the agent in your editor instead
 ```
 
 The agent is Claude Code, which `init` adds to the workspace as a dev dependency (`@anthropic-ai/claude-code`). It
 runs in the workspace with your model and key, follows the workspace's `CLAUDE.md`, and may only read and edit files
-and run `npx geeta-compare` and `npm run` commands. Each run is billed to the key (or the sign-in) like any other use.
+and run `npx geeta-compare` and `npm run` commands. Each run is billed to the key (or the sign-in) like any other use:
+with `auth: "key"`, at API prices; with `auth: "sign-in"`, as part of your Claude subscription.
+
+### The agent in your editor (`"agent": "ide"`)
+
+An agent you already use in your editor (Claude Code in VS Code, or another) can do the same work, with your
+editor's model and plan, so nothing is billed to an API key. With `"agent": "ide"` (or `--agent ide` on one command),
+`llm adapter` and `llm explain` do everything up to starting the agent (the brief, the upgrade record, the evidence
+bundle) and then write the task to `.geeta/requests/<time>-<name>.md` instead of running anything:
+
+```text
+Wrote .geeta/requests/20261112-101500-adapter-Fuel.md. Nothing runs here ("agent": "ide"): give it to the agent in your
+editor (Claude Code in VS Code, or another) in a new conversation in this workspace, e.g.
+
+  Do the task in .geeta/requests/20261112-101500-adapter-Fuel.md
+```
+
+Open the workspace in your editor, start a new conversation with its agent and say that. The file holds the same task
+a Claude Code run gets, and starts by telling the agent to read the workspace's `CLAUDE.md`, so an agent that doesn't
+read it by itself still works by its rules. Several tests make one file with a numbered task each: the agent does them
+in order, or you give it one task per conversation ("Do task 3 in ..."), which keeps each conversation short. Hints
+are in the file as for a run.
+
+The agent then works under your editor's settings, not the restricted tool list above: approve or deny what it asks to
+do as you would for any other task.
 
 **Hints** (`hint:"..."` or `--hint "..."`, any number, for `llm adapter` and `llm explain`) tell the agent what you know
 about your calculator. A mapping decision that follows directly from a hint is recorded in `mapping.json` as yours
@@ -227,10 +279,35 @@ npx geeta-compare fetch VEERG_0.0.0.4      # another release
 npx geeta-compare fetch --force            # download it again
 ```
 
+**While the GEETA repository is private,** its releases need a GitHub token. Create a fine-grained personal access
+token for `zneagcrc/GEETA` with read-only "Contents" access, and put it in the workspace's `.env` (gitignored; the
+template `.env.example` has the line):
+
+```sh
+# .env
+GEETA_TOKEN=github_pat_...
+```
+
+`fetch` then downloads through the GitHub API with it, and `init` uses it (from the environment, or a `.env` already in
+the folder) to find the newest release; without it, `init` pins the newest release it knows. The token is only sent to
+GitHub and is never printed or written anywhere. To keep it in another variable, set `"tokenEnv": "<NAME>"` in
+`geeta.config.json`. Without a token, a private release fails with HTTP 404 and a message saying what to set; a token
+GitHub refuses fails with HTTP 401.
+
 Moving to a new release: change `release` in `geeta.config.json`, fetch it, run the comparison, and explain anything
 new or stale. Evidence fingerprints cover each scenario's inputs, GEETA's results and yours, so only explanations whose
 evidence changed go stale. `fetch` refuses a release whose manifest `toolingContract` this version can't read: update
 this package.
+
+The neutral format doesn't change between releases, so adapters built on it keep working. VEERG_0.0.0.4 (tooling
+contract 2) renamed many test inputs to the workbook headers, writes percentages as numbers (a 0-100 percent or a 0-1
+fraction, no more `"20%"` strings) and keys monthly tables `Month1`..`Month12` from the reporting period's start month.
+The neutral conversion reads the release's `Schemas/renames.json` and translates, so the same scenario gives the same
+neutral file in both releases. What does change is the data itself, where a release changed it: inputs it removed
+(`X_Cell_Site_Region`, the poultry production system), inputs it added, options it renamed or corrected (e.g.
+`"Sprinkler irrigation"`; organic fertiliser is now chosen by manure source, `"Beef cattle"`, with its N content looked
+up), and test values it fixed. An adapter that reads GEETA's test input directly, rather than through the neutral
+format, sees the release's own names.
 
 To compare with something other than the pinned release (another downloaded release, or a GEETA working copy), override
 it. First match wins:
@@ -239,9 +316,9 @@ it. First match wins:
 |---|---|
 | `VEERG_TEST_DIR` (a `Test` folder) | `VEERG_TEST_DIR=../GEETA-work/Test npm run test:veerg` |
 | `GEETA_DIR` (a folder holding `Test/`) | `GEETA_DIR=../GEETA-work npm run test:veerg` |
-| `geeta.local.json` (gitignored; stays until you delete it) | `{ "dir": "../GEETA-work" }`, or `{ "release": "VEERG_0.0.0.4" }` |
+| `geeta.local.json` (gitignored; stays until you delete it) | `{ "dir": "../GEETA-work" }`, or `{ "release": "VEERG_0.0.0.3" }` |
 
-Every run says which test set it used (`Acme 1.2.0 compared with GEETA VEERG_0.0.0.3`), and so do the scenario
+Every run says which test set it used (`Acme 1.2.0 compared with GEETA VEERG_0.0.0.4`), and so do the scenario
 docs and explanation bundles.
 
 ### The VEERG methodology documents (optional)
@@ -337,19 +414,48 @@ trace:
 ```sh
 npx geeta-compare mapping trace                                # every test (skips what is already current)
 npx geeta-compare mapping trace Fuel ManureManagement.Pigs     # some tests
+npx geeta-compare mapping trace --jobs 6                       # six scenarios at a time (default: up to 4)
 ```
 
-Tracing changes each input and runs your calculator to see which of its inputs change, for every scenario, so the
-first full trace of a slow calculator can take an hour or more. The numbers of one table (a livestock class × month
-grid, say) are traced together: each gets a value of its own in one run, and a calculator field is credited to the
-input whose value it carries. A field worked out from several inputs splits the batch until each is accounted for, and
-an input the batch can't settle is traced on its own (`GEETA_TRACE_BATCH=0` traces every input on its own). Trace a
-test when you review its mapping, just after writing its adapter; then `docs` stays about as fast as `test`.
-`mapping trace` prints its progress every 10 seconds (the input it's on, the calculator runs so far and the time
-left in the scenario). Stopping it early keeps what was traced (saved every 30 seconds, between scenarios). Every try is a real calculation, so
-the table shows what your calculator really receives. A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that
-itself. A filtered run (`docs Fuel`) checks and writes only those tests' pages; run it without a filter for the full
-set.
+Trace a test when you review its mapping, just after writing its adapter; then `docs` stays about as fast as `test`.
+A test with no adapter yet is traced on GEETA's side only, which is quick, so `docs` does that itself. A filtered run
+(`docs Fuel`) checks and writes only those tests' pages; run it without a filter for the full set.
+
+#### How the trace works, and what keeps it fast
+
+Tracing changes inputs and runs your calculator to see which of its inputs change. Every try is a real calculation, so
+the table shows what your calculator really receives, but a scenario can take hundreds of runs. These keep that down:
+
+- **Batches.** Many inputs are tried in one run where what changed can be told apart. Numbers each get a value of their
+  own, and a calculator field is credited to the input whose value it carries; a field worked out from several inputs
+  splits the batch until each is accounted for. Without anything else to go on, a batch is the numbers of one table (a
+  livestock class × month grid, say).
+- **Hints from earlier traces.** What a trace found for an input is kept with it: its value carried into your
+  calculator, not used at all, or anything else (looked up, worked out, a share). The next trace of the same test,
+  after an adapter change or a calculator upgrade, uses that: the numbers found carried or unused go in one batch for
+  the whole scenario, and the names, options and flags found unused are tried all at once (nothing changing settles them
+  all; anything changing splits the batch). The other scenarios of a test take hints from the first one traced, so
+  only a test's first scenario is traced without hints. A hint only decides what is tried together: the trace still
+  finds every field itself, so a wrong hint costs runs, not a wrong table. (Inputs found unused are confirmed
+  together, so an effect that one of them has only when another doesn't change could be hidden: the counterpart of
+  single-input tracing, which misses effects that need two inputs to change.) On the Pigs test, hints from a
+  scenario's own earlier trace cut its runs from 350 to 212 with the same table, and all 23 scenarios re-traced after a
+  version change in 2,000 runs, about 86 each.
+- **Several scenarios at once.** `--jobs N` (or `GEETA_TRACE_JOBS`) traces N scenarios at a time in worker processes,
+  each claiming the scenarios it traces. The default is up to 4, one fewer than your processors; `--jobs 1` traces in
+  one process. Workers take hints from each other's traces as they go.
+- **The cache.** Traces are kept in `<docsDir>/.mapping-cache.json`, keyed by the scenario, your adapter's input for it
+  and the calculator version, so a scenario is traced again only when one of those changes. The key is the content, so
+  the cache can be committed and shared: whoever pulls it traces only what changed since.
+- **`captureInputsWithoutCalculating`**, if your plug-in has it, skips the calculation in each run. It is checked against
+  `calculateAndCaptureInputs` on each test's first scenario and used only if both give the same inputs (see
+  "Recording the calculator's inputs").
+
+`mapping trace` prints its progress every 10 seconds (the input it's on, the calculator runs so far and the time left
+in the scenario), how many inputs batches settled, and for each scenario how long it took, how many runs, and how much
+of the time was spent in your calculator. Its last line totals them, so you can see where the time goes. Stopping it
+early (Ctrl+C) keeps what was traced: the cache is saved every 30 seconds, and each worker saves after every scenario.
+`GEETA_TRACE_BATCH=0` traces every input on its own, for comparison.
 
 ## Explanations (LLM on request only)
 
@@ -454,8 +560,10 @@ table is wrong, with no warning, whenever:
 - the calculator rejects an input only while calculating, not in its input schema. The trace would then show a value
   landing where the calculator would refuse it.
 
-Use it only if none of those can happen in any adapter. Otherwise accept the slow first trace: it runs once and is
-cached. (Its old name, `captureInputsOnly`, still works.)
+Use it only if none of those can happen in any adapter. Otherwise accept the slower first trace: it runs once and is
+cached. When the plug-in has both, the trace compares them on each test's first scenario and, where they give
+different inputs, says so and traces that test with the calculation. That catches the cases that show on that scenario,
+not all of them. (Its old name, `captureInputsOnly`, still works.)
 
 ## Developing adapters
 
@@ -525,7 +633,13 @@ Unit conversions, reshaping and derived values stay in the adapter's code, descr
 
 Develop one test at a time. Each step below says where to look.
 
-1. **See what the test holds.** Run `npm run docs:scenarios` and open the test's pages: for each scenario they show the
+1. **See what the test holds.** Start with its brief: `npx geeta-compare brief <Test>` writes
+   `.geeta/briefs/<release>/<Test>.md`, with every neutral input of the test's scenarios in one place: where GEETA's
+   workbook takes it, the workbook's label, unit and options, the VEERG catalogue's definition and equations, the
+   dimension members it comes in and the values the scenarios give it, then the result names. It holds no expected
+   results, so it is safe to read before writing the adapter (`--stdout` prints it, `--all` writes every test's). It
+   is made from the GEETA release, so it is the same for every calculator, and is made again when the release changes.
+   For more, run `npm run docs:scenarios` and open the test's pages: for each scenario they show the
    GEETA inputs (by their workbook labels), the same inputs in the neutral format, and GEETA's expected results.
    `npx geeta-compare neutral export <Test>` writes the neutral scenarios as JSON files (`scenarios/<module>/`), and the
    raw files are in the release (`geeta-releases/<release>/Test/`: `TestInput_*.json`, `TestResults_*.json` for the
@@ -615,10 +729,16 @@ export const fuel: Adapter = (input) => {
 
 Run `npx geeta-compare llm adapter Fuel` ("Using an LLM"), or open Claude Code in the workspace and ask it to "write
 the adapter for Fuel" (or for an enterprise). The workspace's `CLAUDE.md`
-gives it the steps above, the rules and [docs/mapping-decisions.md](docs/mapping-decisions.md). It reads the scenario
-docs, the neutral format and your calculator's inputs (its package's types, or an API's OpenAPI document, which
-`install` records in `geeta.lock.json`), writes the adapter with its mapping record, adds its choices to
+gives it the steps above, the rules and [docs/mapping-decisions.md](docs/mapping-decisions.md). It starts from the
+test's brief (`llm adapter` writes it first and points the agent at it, so the GEETA side isn't gathered from the
+release again in every session), reads your calculator's inputs (its package's types, or an API's OpenAPI document,
+which `install` records in `geeta.lock.json`), writes the adapter with its mapping record, adds its choices to
 `mapping.json` as `"proposed"` (never changing a `"provider"` decision), runs the test, and checks the mapping table.
+
+Several tests at once: `npx geeta-compare llm adapter Fuel Fertiliser Electricity`, or `--all` for every test the
+plug-in has an adapter for. They run one after another, one agent session each; the first is told to change any code
+the adapters share, and the later ones to build on it. After a calculator upgrade, add `--upgrade` ("Upgrading a
+calculator").
 
 Then review: `npx geeta-compare mapping` lists its proposals. Keep each one (set `"by": "provider"`), change it, or
 reject it, and edit the adapter code as you like. Review the mapping before explaining any differences: a wrong mapping

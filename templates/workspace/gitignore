@@ -9,3 +9,9 @@ veerg-documents/
 docs/scenarios/
 # Secrets for API calculators (apiKeyEnv in geeta.config.json)
 .env
+# Made by the tool on this machine: test briefs, calculator interface snapshots and upgrade records, agent requests
+.geeta/
+# A parallel mapping trace's work in progress (merged into .mapping-cache.json when it finishes)
+.mapping-cache.w*.json
+.mapping-claims/
+*.json.tmp

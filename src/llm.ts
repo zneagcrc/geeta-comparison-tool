@@ -5,11 +5,13 @@
 //     "provider": "anthropic",            // the provider (Anthropic only, for now)
 //     "model": "claude-opus-5-5",         // the model the agent runs on
 //     "apiKeyEnv": "ANTHROPIC_API_KEY",   // the environment variable (or .env entry) holding the key
-//     "auth": "key"                       // "key": only that key is used (runs fail without it);
-//                                         // "sign-in": Claude Code's own sign-in instead, the key is ignored
-//   }
+//     "auth": "key",                      // "key": only that key is used (runs fail without it);
+//                                         // "sign-in": Claude Code's own sign-in instead (a Claude subscription), the key is ignored
+//     "agent": "claude-code"              // "claude-code": the commands run Claude Code themselves, as set above;
+//                                         // "ide": they write the task to .geeta/requests/ for the agent in your editor
+//   }                                     //   (Claude Code in VS Code, or any other) to do; nothing runs here, no key needed
 //
-// Every field is optional: these are the defaults. With "key", Claude Code gets its own empty settings folder and the
+// Every field is optional: these are the defaults; `--agent ide` (or claude-code) overrides "agent" for one command. With "key", Claude Code gets its own empty settings folder and the
 // key through apiKeyHelper, so it never falls back to a sign-in it finds on the machine (it would otherwise prefer one).
 // The LLM never runs in `test`, `docs`, `explain status/bundle/add` or `mapping`: only in `geeta-compare llm ...`.
 import crypto from "node:crypto";
@@ -20,9 +22,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { WORKSPACE, workspaceConfig } from "./workspace";
 
 export const PROVIDERS = ["anthropic"] as const;
-export type LlmConfig = { provider: string; model: string; apiKeyEnv: string; auth: "key" | "sign-in" };
+export const AGENTS = ["claude-code", "ide"] as const;
+export type Agent = (typeof AGENTS)[number];
+export type LlmConfig = { provider: string; model: string; apiKeyEnv: string; auth: "key" | "sign-in"; agent: Agent };
 
-export const DEFAULT_LLM: LlmConfig = { provider: "anthropic", model: "claude-opus-5-5", apiKeyEnv: "ANTHROPIC_API_KEY", auth: "key" };
+export const DEFAULT_LLM: LlmConfig = { provider: "anthropic", model: "claude-opus-5-5", apiKeyEnv: "ANTHROPIC_API_KEY", auth: "key", agent: "claude-code" };
 
 /** The workspace's LLM settings, with the defaults filled in. */
 export const llmConfig = (): LlmConfig => {
@@ -31,11 +35,20 @@ export const llmConfig = (): LlmConfig => {
     console.error(`geeta.config.json llm.auth must be "key" or "sign-in" (it is "${c.auth}")`);
     process.exit(1);
   }
+  // --agent on the command line overrides the config
+  const argv = process.argv.slice(2);
+  const flag = argv.includes("--agent") ? argv[argv.indexOf("--agent") + 1] : argv.find((a) => a.startsWith("--agent="))?.slice(8);
+  const agent = (flag ?? c.agent ?? DEFAULT_LLM.agent) as Agent;
+  if (!(AGENTS as readonly string[]).includes(agent)) {
+    console.error(`The agent must be ${AGENTS.map((a) => `"${a}"`).join(" or ")} (${flag ? "--agent" : "geeta.config.json llm.agent"} is "${agent}")`);
+    process.exit(1);
+  }
   return {
     provider: c.provider ?? DEFAULT_LLM.provider,
     model: c.model ?? DEFAULT_LLM.model,
     apiKeyEnv: c.apiKeyEnv ?? DEFAULT_LLM.apiKeyEnv,
     auth: c.auth ?? DEFAULT_LLM.auth,
+    agent,
   };
 };
 
@@ -220,4 +233,38 @@ export const runAgent = async (prompt: string): Promise<number> => {
     console.log(`\n${result.is_error ? "Ended with an error" : "Done"} in ${elapsed(result.duration_ms ?? Date.now() - start)}${cost}, ${result.num_turns ?? "?"} turns.`);
   } else if (stderr.trim()) console.error(stderr.trim());
   return result?.is_error ? 1 : status;
+};
+
+/** One task for the agent: a title (a test, say) and what to do. */
+export type AgentTask = { title: string; prompt: string };
+
+/**
+ * For the agent in the editor ("agent": "ide"): writes the tasks to .geeta/requests/<time>-<name>.md and says what to
+ * tell the agent. Nothing runs here. The file says to read CLAUDE.md first, so an agent that doesn't load it by itself
+ * (anything but Claude Code) still works by its rules.
+ */
+export const writeAgentRequest = (name: string, command: string, tasks: AgentTask[]): string => {
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+  const file = path.join(WORKSPACE, ".geeta", "requests", `${stamp}-${name.replace(/[^\w.-]+/g, "_")}.md`);
+  const rel = path.relative(WORKSPACE, file).replace(/\\/g, "/");
+  const lines = [
+    `# ${tasks.length === 1 ? `Task: ${tasks[0].title}` : `${tasks.length} tasks: ${tasks.map((t) => t.title).join(", ")}`}`,
+    "",
+    `Written by \`${command}\` on ${new Date().toISOString().slice(0, 16).replace("T", " ")} for the agent in the editor.`,
+    "",
+    "Work in this workspace. Read its CLAUDE.md first if you haven't: its rules apply to every task here." +
+      (tasks.length > 1
+        ? " Do the tasks one after another, in order, finishing each (with its report) before starting the next. Each task stands on its own, " +
+          'so they can also be done in separate conversations ("Do task 3 in <this file>"), in order.'
+        : ""),
+    "",
+    ...tasks.flatMap((t, i) => [tasks.length > 1 ? `## Task ${i + 1} of ${tasks.length}: ${t.title}` : "## The task", "", t.prompt, ""]),
+  ];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, lines.join("\n"));
+  console.log(
+    `\nWrote ${rel}. Nothing runs here ("agent": "ide"): give it to the agent in your editor (Claude Code in VS Code, or another) in a new ` +
+      `conversation in this workspace, e.g.\n\n  Do the task${tasks.length > 1 ? "s" : ""} in ${rel}\n`,
+  );
+  return file;
 };

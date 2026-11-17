@@ -53,7 +53,7 @@ would sit under `workbook` (`cells`, `tables`); none does now.
     "N_j": { "1 = Boars": 100 },                // symbol from the catalogue; members as the documents write them
     "MMS_jmT1": { "1 = Boars": { "1 = Anaerobic lagoon": 0.15 } },
     "manure destinations": { "sold": { "1 = Anaerobic lagoon": { "13 = Direct application": 0.25 } } },
-    "irrigation method ir": "Sprinkler Irrigation"
+    "irrigation method ir": "Sprinkler irrigation"
   },
   "workbook": { "farm name": "...", "Method 1 default manure production": { } }   // not methodology inputs
 }
@@ -69,12 +69,17 @@ would sit under `workbook` (`cells`, `tables`); none does now.
   manure management systems from the chapter 3 and 4 subscript tables (`"5a = Cows 2-3 years"`,
   `"7 = Digestor/Covered lagoon"`), table members from Appendix A (`"Composting"`, `"Unmanaged - deep"`,
   `"Straw incorporated shortly (<30 days) before cultivation"`). Time periods are kept as the workbook labels them
-  (`"Spring"`, `"January 2025"`).
+  (`"Spring"`, `"January 2025"`). From VEERG_0.0.0.4 the workbook keys monthly tables `Month1`..`Month12`, counted from
+  the reporting period's start month; the neutral file keeps the calendar month names.
 - **Methods.** Inputs the workbook takes separately for each method carry the method in the key
   (`"F_removed (Method 1)"`, `"N_jkl (Method 2, months)"`). Method 2 farm data otherwise uses the plain symbol (`I_j`,
   `VS_j`).
 - **Fractions are 0-1** where the workbook takes a percentage string ("20%"). Values the workbook takes as whole per
-  cent stay as numbers, with "(per cent)" in the key.
+  cent stay as numbers, with "(per cent)" in the key. (VEERG_0.0.0.4 writes percentages as numbers; the neutral
+  values are the same as before.)
+- **The same in every release.** The conversion is written against VEERG_0.0.0.3's test input names and translates
+  newer releases with their `Schemas/renames.json` (`src/neutral/geeta-format.ts`), so a scenario's neutral file only
+  changes where the release changed its data.
 - **`site`** holds the site records the workbook derives climate zone, rainfall region etc. from.
 - **`workbook`** holds what isn't a methodology input: front-end conveniences (farm name, the dairy production system
   template), the workbook's Method 1 lookup tables (Appendix A defaults, filled in by formulas), and columns the

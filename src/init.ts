@@ -4,12 +4,13 @@
 // geeta.config.json later and installed with `geeta-compare install <id>`.
 import fs from "node:fs";
 import path from "node:path";
+import { DEFAULT_TOKEN_ENV, listReleases } from "./geeta-github";
 
 const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const TEMPLATE = path.join(PACKAGE_ROOT, "templates", "workspace");
 const GEETA_REPO = "zneagcrc/GEETA";
 /** Used when the GEETA releases can't be listed (offline): the latest known release with a test set. */
-const FALLBACK_RELEASE = "VEERG_0.0.0.3";
+const FALLBACK_RELEASE = "VEERG_0.0.0.4";
 /** The Claude Code version a new workspace gets (for `geeta-compare llm`). */
 const CLAUDE_CODE = "^2.1.322";
 
@@ -23,14 +24,25 @@ if (process.argv.slice(2).some((a) => !a.startsWith("--")))
 const dir = process.cwd();
 if (fs.existsSync(path.join(dir, "geeta.config.json"))) fail(`${dir} already has a geeta.config.json`);
 
+/**
+ * The token for a private GEETA repository: GEETA_TOKEN from the environment, or from a .env already in this folder
+ * (set it up before init to have the newest release pinned; without it, init pins the latest release it knows).
+ */
+const geetaToken = (): string | undefined => {
+  if (process.env[DEFAULT_TOKEN_ENV]) return process.env[DEFAULT_TOKEN_ENV];
+  const env = path.join(dir, ".env");
+  if (!fs.existsSync(env)) return undefined;
+  for (const line of fs.readFileSync(env, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m?.[1] === DEFAULT_TOKEN_ENV && m[2]) return m[2].replace(/^(["'])(.*)\1$/, "$2");
+  }
+  return undefined;
+};
+
 /** The newest published GEETA release that has a test set. */
 const latestRelease = async () => {
   try {
-    const res = await fetch(`https://api.github.com/repos/${GEETA_REPO}/releases?per_page=20`, {
-      headers: { "User-Agent": "geeta-comparison-tool", Accept: "application/vnd.github+json" },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const releases = (await res.json()) as { tag_name: string; draft: boolean; assets: { name: string }[] }[];
+    const releases = await listReleases(GEETA_REPO, DEFAULT_TOKEN_ENV, geetaToken());
     const withTests = releases.find((r) => !r.draft && r.assets.some((a) => a.name === `${r.tag_name}_tests.zip`));
     if (withTests) return withTests.tag_name;
     throw new Error("no release with a test set");

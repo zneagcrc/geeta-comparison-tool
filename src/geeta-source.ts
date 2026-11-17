@@ -12,14 +12,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { WORKSPACE, inWorkspace, workspaceConfig } from "./workspace";
+import { DEFAULT_TOKEN_ENV } from "./geeta-github";
 
 /** Paths in messages are shown relative to the workspace. */
 export const ROOT = WORKSPACE;
 export const RELEASES_DIR = inWorkspace("geeta-releases");
 
+/**
+ * The GEETA repository and release pinned in geeta.config.json, and the token for a private repository: the variable
+ * "tokenEnv" names (GEETA_TOKEN by default), from the environment or the workspace's .env; undefined when it isn't set.
+ */
 export const geetaConfig = () => {
-  const { repo, release } = workspaceConfig();
-  return { repo, release };
+  const { repo, release, tokenEnv = DEFAULT_TOKEN_ENV } = workspaceConfig() as { repo: string; release: string; tokenEnv?: string };
+  return { repo, release, tokenEnv, token: process.env[tokenEnv] || undefined };
 };
 
 type LocalConfig = { dir?: string; release?: string; veergDocuments?: string };
@@ -64,6 +69,16 @@ export const VEERG_DOCUMENTS_DIR = process.env.VEERG_DOCUMENTS_DIR
     : path.join(GEETA.dir, "VEERG documents");
 
 /** The generated test workbooks: TestExcel/ in a release, Excel/TestExcel/ in a GAF-VEERG-Functions working copy. */
+/** The release's input field definitions (labels, units, options) for every workbook. */
+export const INPUT_FIELDS_DIR = path.resolve(TEST_DIR, "../InputFields");
+
+/** The InputFields file's base name for a test workbook: <base>_InputFields.json. */
+export const inputFieldsBaseName = (excelFile: string) => {
+  let b = excelFile.replace(/\.xlsx?$/i, "").replace(/_WIP_v\d+$/i, "").replace(/_(Template|Clean)$/i, "");
+  if (/^Enterprise_/i.test(b)) return b;
+  return b.replace(/^\d+(?:_\d+)?_/, "");
+};
+
 export const TEST_EXCEL_DIR = fs.existsSync(path.join(GEETA.dir, "TestExcel")) ? path.join(GEETA.dir, "TestExcel") : path.join(GEETA.dir, "Excel/TestExcel");
 
 /** One line for run headers and docs: "GEETA VEERG_0.0.0.3" or "GEETA local work in progress: <dir> (GEETA_DIR)". */

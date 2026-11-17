@@ -36,11 +36,13 @@ the calculator's model, and never leave the choice to the provider. Details: "Th
 When asked to write or extend an adapter ("write the adapter for Fuel", "add Enterprises.CroppingGrains"), follow
 "Developing adapters" in `node_modules/geeta-comparison-tool/README.md`:
 
-1. Read what the test holds, from sources without GEETA's expected values: the neutral scenarios
-   (`npx geeta-compare neutral export <Test>`, then `scenarios/<module>/`), the input labels, units and options in the
-   release (`geeta-releases/<release>/InputFields/`), the result names (`npx geeta-compare names <Test>`), and the
-   catalogue and equations (`node_modules/geeta-comparison-tool/catalogue/veerg-inputs.md`, the release's
-   `Modules/**/*.xlf`). Workbook formulas: `python -I node_modules/geeta-comparison-tool/tools/cellformula.py ...` (or
+1. Read what the test holds, from sources without GEETA's expected values. Start from the test's brief
+   (`npx geeta-compare brief <Test>` writes `.geeta/briefs/<release>/<Test>.md`; the request names it when it comes from
+   `llm adapter`): every neutral input with where the workbook takes it, its label, unit and options, its VEERG
+   definition and equations, its members and values, and the result names. Go to the sources behind it only for what
+   it leaves open: the neutral scenarios (`npx geeta-compare neutral export <Test>`, then `scenarios/<module>/`), the
+   release's `InputFields/`, the catalogue and equations (`node_modules/geeta-comparison-tool/catalogue/veerg-inputs.md`,
+   the release's `Modules/**/*.xlf`). Workbook formulas: `python -I node_modules/geeta-comparison-tool/tools/cellformula.py ...` (or
    `xlsxf.py`; `py -I` if `python` isn't the command). Don't open the scenario docs, `TestResults_*.json` or `test`
    output until the adapter is written: they show the expected values.
 2. Read the calculator's inputs: its package's types and documentation, or for an API the OpenAPI document recorded in
@@ -74,6 +76,26 @@ what the inputs mean, then let the comparison show the differences. An adapter t
 emissions: no emission factors, GWPs or methodology equations in it (they are the calculator's). When a mapping is
 ambiguous, choose the reading the definitions support, record it as an assumption, and say so in your report. A
 conflict between VEERG's definition and the calculator's isn't ambiguous: VEERG's decides (above).
+
+## Adapting to an upgrade (when asked)
+
+When asked to adapt adapters to a new version of a calculator (`llm adapter --upgrade`, or "the calculator was
+upgraded, adapt the adapters"):
+
+1. Read what changed: `.geeta/upgrades/<id>/<old>..<new>.md` when the request names it (input names renamed, removed
+   and added, the changed lines that recur, files added and removed; the full `.diff` is beside it, to search for a
+   name in context), else the calculator's types, documentation and changelog. Provider hints in the request say what
+   the provider knows about the change.
+2. Change only what the new version requires: renamed inputs, changed shapes (a number that became an object, say),
+   moved or split endpoints, new required inputs. Keep every decision in `mapping.json` (its keys are GEETA's names,
+   which don't change) and everything else the adapter maps; don't rewrite an adapter or redo its decisions. A new
+   input the calculator now requires is a decision like any other: propose it. An input the new version no longer
+   takes is left out with a note.
+3. Code several adapters share (a helper that builds the calculator's number objects, say) is changed once, by the
+   first task of the run; later tasks build on it.
+4. Run `npm run typecheck`, `npx geeta-compare test <Test>` and `npx geeta-compare baseline compare <Test>` (what moved
+   since the baseline). Report what you changed, every result that moved and why (the calculator's change, or a
+   mapping you had to change), and anything the new version no longer supports. Don't explain differences unless asked.
 
 ## Explaining differences (only when asked)
 
