@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { findTest, loadCases } from "../fixtures";
 import { MODULES, type NeutralModule } from "../neutral/registry";
+import { translated } from "../neutral/geeta-format";
 import type { Calculator, InputCall } from "../calculators/types";
 import { inWorkspace } from "../workspace";
 
@@ -571,7 +572,14 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
   }
   const key = crypto
     .createHash("sha256")
-    .update(JSON.stringify([CACHE_VERSION, module.test, neutral, base ?? null, calc.id, calc.version()]))
+    .update(
+      JSON.stringify([
+        CACHE_VERSION, module.test, neutral, base ?? null, calc.id, calc.version(),
+        // A release in a newer test format (renamed inputs) has other GEETA field names for the same neutral scenario;
+        // left out for the specs' own format, so caches made with it stay valid
+        ...(translated() ? [module.toVeerg(neutral)] : []),
+      ]),
+    )
     .digest("hex")
     .slice(0, 20);
   const c = cacheFor(calc);
