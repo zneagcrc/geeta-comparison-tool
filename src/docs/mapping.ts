@@ -32,7 +32,16 @@ export type TraceStats = { runs: number; calcMs: number; ms: number; inputs: num
  * The scenario's mapping, and what the adapter gave the calculator that no neutral input reaches (defaults, constants).
  * A cached trace also says which test it belongs to, when it was made and how it went (older caches don't).
  */
-export type Mapping = { rows: MappingRow[]; adapterOnly: Landing[]; calculatorTraced: boolean; test?: string; tracedAt?: number; stats?: TraceStats };
+export type Mapping = {
+  rows: MappingRow[];
+  adapterOnly: Landing[];
+  calculatorTraced: boolean;
+  test?: string;
+  tracedAt?: number;
+  stats?: TraceStats;
+  /** What the calculator side depends on (scenarioMapping), so a release that only renames GEETA's inputs reuses it. */
+  calcKey?: string;
+};
 
 type Leaf = { path: string[]; value: unknown };
 
@@ -475,10 +484,11 @@ const cacheFor = (calc: Calculator) => {
 };
 
 /**
- * Scenario mappings traced this run, read from the cache, left untraced, and (in a worker) left to another worker; and
+ * Scenario mappings traced this run, read from the cache, reused from a trace against another release's GEETA names
+ * (only GEETA's side traced again), left untraced, and (in a worker) left to another worker; and
  * over the scenarios traced: calculator runs, time in the calculator and in all, inputs, inputs settled in batches.
  */
-export const traceStats = { traced: 0, cached: 0, untraced: 0, elsewhere: 0, runs: 0, calcMs: 0, ms: 0, inputs: 0, batched: 0 };
+export const traceStats = { traced: 0, cached: 0, regeeta: 0, untraced: 0, elsewhere: 0, runs: 0, calcMs: 0, ms: 0, inputs: 0, batched: 0 };
 
 /** The cache file, relative to the workspace (for progress messages). */
 export const mappingCacheFile = (calc: Calculator) => path.join(calc.docsDir, ".mapping-cache.json");
@@ -570,26 +580,73 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
   } catch {
     // the calculator side isn't traced
   }
-  const key = crypto
-    .createHash("sha256")
-    .update(
-      JSON.stringify([
-        CACHE_VERSION, module.test, neutral, base ?? null, calc.id, calc.version(),
-        // A release in a newer test format (renamed inputs) has other GEETA field names for the same neutral scenario;
-        // left out for the specs' own format, so caches made with it stay valid
-        ...(translated() ? [module.toVeerg(neutral)] : []),
-      ]),
-    )
-    .digest("hex")
-    .slice(0, 20);
+  const hash = (parts: unknown[]) => crypto.createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 20);
+  // What the calculator side depends on: the neutral scenario and the calculator's inputs for it
+  const calcKey = hash([CACHE_VERSION, module.test, neutral, base ?? null, calc.id, calc.version()]);
+  // A release in a newer test format (renamed inputs) has other GEETA field names for the same neutral scenario, so the
+  // key also covers its fixture; left out for the specs' own format, where the key is the calculator side's
+  const key = translated() ? hash([CACHE_VERSION, module.test, neutral, base ?? null, calc.id, calc.version(), module.toVeerg(neutral)]) : calcKey;
   const c = cacheFor(calc);
   c.used.add(key);
-  if (c.entries[key]) traceStats.cached++;
+  if (c.entries[key]) {
+    if (!worker || claim(key)) traceStats.cached++; // (counted by one worker)
+  }
+  // The same calculator side traced against another release's names: kept, with GEETA's side traced again (no calculator runs)
+  else if (key !== calcKey && sameCalculatorSide(c, calcKey)) {
+    if (!claim(key)) {
+      traceStats.elsewhere++;
+      return null;
+    }
+    const earlier = sameCalculatorSide(c, calcKey)!;
+    const geeta = new Map(traceGeetaSide(module, neutral).map((r) => [pathKey(r.path), r.geeta]));
+    if (earlier.rows.every((r) => geeta.has(pathKey(r.path))) && geeta.size === earlier.rows.length) {
+      traceStats.regeeta++;
+      c.entries[key] = { ...earlier, rows: earlier.rows.map((r) => ({ ...r, geeta: geeta.get(pathKey(r.path))! })), test: module.test, calcKey };
+      c.fresh.add(key);
+      calcKeys?.set(calcKey, key);
+      return c.entries[key];
+    }
+    // (rows that don't line up: traced in full below)
+    return scenarioMappingTraced(module, neutral, calc, trace, label, base, key, calcKey, true);
+  } else return scenarioMappingTraced(module, neutral, calc, trace, label, base, key, calcKey);
+  return c.entries[key];
+};
+
+/**
+ * The cached trace with this calculator side: one made in the specs' own format is keyed by it, a later one says it.
+ * Only a trace that reached the calculator counts.
+ */
+let calcKeys: Map<string, string> | undefined;
+const sameCalculatorSide = (c: Cache, calcKey: string): Mapping | undefined => {
+  if (!calcKeys || calcKeysOf !== c) {
+    calcKeysOf = c;
+    calcKeys = new Map(Object.entries(c.entries).flatMap(([k, m]) => (m.calcKey ? [[m.calcKey, k] as const] : [])));
+  }
+  const m = c.entries[calcKey] ?? c.entries[calcKeys.get(calcKey) ?? ""];
+  return m?.calculatorTraced && m.rows?.length ? m : undefined;
+};
+let calcKeysOf: Cache | undefined;
+
+const scenarioMappingTraced = (
+  module: NeutralModule,
+  neutral: any,
+  calc: Calculator,
+  trace: boolean,
+  label: string | undefined,
+  base: InputCall[] | undefined,
+  key: string,
+  calcKey: string,
+  claimed = false,
+): Mapping | null => {
+  const c = cacheFor(calc);
+  if (c.entries[key]) {
+    if (!worker || claim(key)) traceStats.cached++; // (counted by one worker)
+  }
   // Without the calculator's inputs (no adapter yet, or no calculateAndCaptureInputs) a trace is quick: only GEETA's side is traced
   else if (!trace && base) {
     traceStats.untraced++;
     return null;
-  } else if (!claim(key)) {
+  } else if (!claimed && !claim(key)) {
     traceStats.elsewhere++;
     return null;
   } else {
@@ -614,6 +671,7 @@ export const scenarioMapping = (module: NeutralModule, neutral: any, calc: Calcu
       calculatorTraced: !!baseCalc,
       test: module.test,
       tracedAt: Date.now(),
+      calcKey,
       ...(baseCalc ? { stats } : {}),
     };
     c.fresh.add(key);

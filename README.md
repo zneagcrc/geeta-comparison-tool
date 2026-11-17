@@ -77,7 +77,7 @@ npm run geeta:fetch                               # download the GEETA release p
 | File | What it is |
 |---|---|
 | `geeta.config.json` | The GEETA release to compare with, and the calculators (none yet) |
-| `comparison.config.json` | Scenarios to leave out of the comparison |
+| `comparison.config.json` | Scenarios to leave out of the comparison; `runDefaultScenariosOnly` for a quick first pass |
 | `CLAUDE.md` | How Claude Code explains differences in this workspace |
 | `package.json` scripts | `geeta:fetch`, `geeta:install`, `test:veerg`, `docs:scenarios`, `explain`, `llm`, `typecheck` (and Claude Code as a dev dependency) |
 | `.env.example` | The secrets the workspace can use (the LLM key, API calculators' keys): copy to `.env` |
@@ -381,6 +381,30 @@ exclusions in your findings document.
 `test` and `scenario` are exact names with `*` wildcards; no `scenario` excludes the whole test; `calculators` (names or
 ids) limits a rule to some calculators; `reason` is required. A rule that matches nothing is reported as a warning.
 
+## Default scenarios only (a quick first pass)
+
+While an adapter is new, the big problems (a wrong unit, a missing input, an input in the wrong place) show on each
+test's default scenario. Running only those finds them early, without tracing and testing every scenario:
+
+```sh
+npx geeta-compare test --default-only
+npx geeta-compare mapping trace --default-only
+npx geeta-compare docs --default-only
+```
+
+`--default-only` works on `test`, `mapping`, `mapping trace`, `docs`, `explain` and `neutral check`.
+`GEETA_DEFAULT_ONLY=1` does the same for every command, and `"runDefaultScenariosOnly": true` in
+`comparison.config.json` makes it the workspace's setting until you take it out (`GEETA_DEFAULT_ONLY=0` overrides it
+for one run). The default scenario is a test's first one ("Default" or "Default scenario"); a test without named
+scenarios is its own default, so it always runs. On the current test set that's 29 of 96 scenarios: Pigs manure
+management 1 of 23, Poultry 1 of 19, Fertiliser 1 of 16. The enterprise tests have one scenario each, so they don't
+get quicker.
+
+It only narrows a run; it doesn't exclude anything. Results of other scenarios aren't counted as excluded, a trace run
+this way keeps the cached traces of the other scenarios, the docs say on their index that they're limited, and
+explanations stay in the store. A scenario named on the command line (`test "Fertiliser:Urea only"`) runs anyway.
+Every command says when it's limited.
+
 ## Scenario docs (HTML and Markdown)
 
 ```sh
@@ -447,6 +471,8 @@ the table shows what your calculator really receives, but a scenario can take hu
 - **The cache.** Traces are kept in `<docsDir>/.mapping-cache.json`, keyed by the scenario, your adapter's input for it
   and the calculator version, so a scenario is traced again only when one of those changes. The key is the content, so
   the cache can be committed and shared: whoever pulls it traces only what changed since.
+- **`resultCache`** in your plug-in calculates each distinct calculator input once, so a run only recalculates the
+  calls the changed inputs reach (see "Recording the calculator's inputs"). This is usually the biggest saving.
 - **`captureInputsWithoutCalculating`**, if your plug-in has it, skips the calculation in each run. It is checked against
   `calculateAndCaptureInputs` on each test's first scenario and used only if both give the same inputs (see
   "Recording the calculator's inputs").
@@ -550,6 +576,26 @@ export const calculateAndCaptureInputs = <T>(fn: () => T) => {
 
 Pass it to the plug-in: `{ adapters, calculateAndCaptureInputs }`. An API calculator's `apiClient` records its requests
 already (`calculateAndCaptureInputs: api.calculateAndCaptureInputs`). The old name, `captureInputs`, still works.
+
+**Calculate each input once (`resultCache`).** The mapping trace changes one input, or a batch, and runs the adapter
+again, so most of the calls an adapter makes repeat the last run's exactly. If your calculator's result depends only
+on its input, wrap the call and those repeats cost nothing; the results are the same:
+
+```ts
+import { resultCache } from "geeta-comparison-tool/src/calculators/result-cache";
+
+const calculateOnce = resultCache((input: AcmeInput) => calculate(input));
+
+export const runAcme = (input: AcmeInput) => {
+  captured?.push({ schema: "AcmeInput", input: structuredClone(input) });
+  return calculateOnce(input);
+};
+```
+
+Record the input before the cache, as here, so the docs and the trace still see every call. Results are handed out as
+copies, and a call that throws isn't cached. On a dairy enterprise scenario whose adapter makes 31 calculator calls per
+run, it made the trace 4.5 times faster with an identical table. `GEETA_RESULT_CACHE=0` turns it off. An API calculator
+doesn't need it: `apiClient` sends identical requests once per run already.
 
 **`captureInputsWithoutCalculating` (optional, and best left out).** The plug-in can also give the mapping trace a
 version that records the inputs but skips the calculation, returning a placeholder. Tracing is then much faster, but the

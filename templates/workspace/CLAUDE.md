@@ -59,7 +59,9 @@ When asked to write or extend an adapter ("write the adapter for Fuel", "add Ent
    an input the calculator can't take, propose `"to": null` with the reason; never drop one silently. A partial
    adapter gets `covers`. Call the calculator through one function that records its input, and give the plug-in
    `calculateAndCaptureInputs` ("Recording the calculator's inputs" in the README) if it doesn't have it: the scenario
-   docs and their mapping trace need it. Don't add `captureInputsWithoutCalculating`.
+   docs and their mapping trace need it. In that function, after recording the input, call the calculator through
+   `resultCache` (same README section) if its results depend only on its input: the trace repeats most calls, and this
+   makes it several times faster. Don't add `captureInputsWithoutCalculating`.
 4. Run `npm run typecheck`, `npx geeta-compare test <Test>` and `npx geeta-compare mapping <Test>`, then
    `npx geeta-compare mapping trace <Test>` and `npx geeta-compare docs <Test>`, and check the test's input mapping page: every "Not used by" input must be deliberate and have a note.
 5. Report what the adapter maps, what it leaves out, the decisions you proposed (they wait for the provider's

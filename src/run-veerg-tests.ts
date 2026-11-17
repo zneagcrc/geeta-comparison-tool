@@ -9,14 +9,17 @@ import { calculator } from "./calculators";
 import { comparedResults } from "./calculators/types";
 import { isExcluded, warnUnmatched } from "./comparison-config";
 import { diagnoseCase } from "./explain/diagnose";
+import { inScope, scopeNote } from "./scenario-scope";
 
 const { adapters, name: calculatorName, version, findings } = calculator();
-console.log(`${calculatorName} ${version()} compared with ${geetaLabel()}`);
+console.log(`${calculatorName} ${version()} compared with ${geetaLabel()}${scopeNote()}`);
 const requested = process.argv.slice(2).map((arg) => arg.split(":"));
 const selection = requested.length ? requested : Object.keys(adapters).map((name) => [name]);
 let failures = 0;
 // Scenarios comparison.config.json leaves out of the comparison: not run, only counted
 let excluded = 0;
+// Scenarios left out of a default-scenarios-only run (scenario-scope.ts)
+let notDefault = 0;
 /** Results compared (an adapter error counts its scenario's results). */
 let compared = 0;
 warnUnmatched(Object.keys(adapters));
@@ -31,10 +34,15 @@ for (const [name, scenarioFilter] of selection) {
     continue;
   }
 
-  for (const { name: scenario, input, expected: all } of loadCases(test)) {
+  for (const [i, { name: scenario, input, expected: all }] of loadCases(test).entries()) {
     // A partial (enterprise) adapter is compared only on the results of the modules it maps
     const expected = comparedResults(adapter, all);
     if (scenarioFilter && scenario !== scenarioFilter) continue;
+    // (a scenario asked for by name runs anyway)
+    if (!scenarioFilter && !inScope(i)) {
+      notDefault++;
+      continue;
+    }
     if (isExcluded(name, scenario)) {
       excluded++;
       continue;
@@ -103,4 +111,5 @@ if (!requested.length) {
   if (missing.length) console.log(`No adapter yet for ${missing.length} test(s): ${missing.join(", ")}`);
 }
 if (excluded) console.log(`${excluded} scenario(s) excluded by comparison.config.json`);
+if (notDefault) console.log(`${notDefault} scenario(s) not run: default scenarios only`);
 process.exitCode = failures ? 1 : 0;

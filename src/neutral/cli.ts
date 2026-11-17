@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { findTest, loadCases } from "../fixtures";
 import { MODULES, type NeutralModule, moduleFor, moduleForScenario } from "./registry";
+import { inScope } from "../scenario-scope";
 import { calculator, calculatorIds } from "../calculators";
 import { WORKSPACE } from "../workspace";
 
@@ -76,7 +77,8 @@ if (command === "export") {
 } else if (command === "check") {
   let problems = 0;
   for (const m of selected(args)) {
-    for (const { name, input } of loadCases(findTest(m.test))) {
+    for (const [i, { name, input }] of loadCases(findTest(m.test)).entries()) {
+      if (!inScope(i)) continue; // (default scenarios only: scenario-scope.ts)
       const label = `${m.test}${name ? ` / ${name}` : ""}`;
       try {
         const neutral = m.fromVeerg(input);

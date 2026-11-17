@@ -1,3 +1,4 @@
 {
+  "runDefaultScenariosOnly": false,
   "exclude": []
 }

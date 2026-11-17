@@ -12,6 +12,7 @@ import path from "node:path";
 import { calculator } from "./calculators";
 import { findTest, loadCases } from "./fixtures";
 import { isExcluded } from "./comparison-config";
+import { inScope } from "./scenario-scope";
 import { type DecisionUse, decisionUses, mappingFileOf, readMapping, resetDecisionUses } from "./mapping";
 import { GEETA } from "./geeta-source";
 import { WORKSPACE } from "./workspace";
@@ -35,8 +36,8 @@ for (const name of requested.length ? requested : Object.keys(calc.adapters)) {
     console.log(`${name}: ${!adapter ? "no adapter" : "not in Test.json"}, skipped`);
     continue;
   }
-  for (const { name: scenario, input } of loadCases(test)) {
-    if (isExcluded(name, scenario)) continue;
+  for (const [i, { name: scenario, input }] of loadCases(test).entries()) {
+    if (isExcluded(name, scenario) || !inScope(i)) continue;
     resetDecisionUses();
     const { log, warn } = console;
     console.log = console.warn = () => {};

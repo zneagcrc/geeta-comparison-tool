@@ -14,6 +14,7 @@ import { diagnoseCase } from "./diagnose";
 import { calculator } from "../calculators";
 import { comparedResults } from "../calculators/types";
 import { isExcluded } from "../comparison-config";
+import { inScope } from "../scenario-scope";
 import { DOCS_DIR, chaptersOfResults, documentFor, listDocuments } from "./documents";
 import { type DifferenceType, type ExplanationRecord, differenceTypes, loadStore, matches, saveStore, storeDir, storeFile } from "./store";
 import { GEETA, TEST_EXCEL_DIR, geetaLabel } from "../geeta-source";
@@ -36,8 +37,9 @@ const runTest = (test: string, scenarioFilter?: string) => {
   const entry = findTest(test);
   if (!adapter || !entry?.TestInputFile) throw new Error(`${test}: ${!adapter ? "no adapter" : "no test entry in Test.json"}`);
   return loadCases(entry)
-    // Scenarios comparison.config.json excludes aren't compared, so they aren't explained either
-    .filter((c) => (!scenarioFilter || c.name === scenarioFilter) && !isExcluded(test, c.name))
+    // Scenarios comparison.config.json excludes aren't compared, so they aren't explained either; a default-scenarios-only
+    // run (scenario-scope.ts) looks at each test's first scenario, unless one is asked for by name
+    .filter((c, i) => (scenarioFilter ? c.name === scenarioFilter : inScope(i)) && !isExcluded(test, c.name))
     .map((c) => {
       const notes: string[] = [];
       const { log, warn } = console;

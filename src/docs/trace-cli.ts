@@ -14,6 +14,7 @@ import { buildModel } from "./scenario-model";
 import { mappingCacheFile, mergeTraceShards, progress, saveMappingCache, traceStats, worker } from "./mapping";
 import { calculator } from "../calculators";
 import { inWorkspace } from "../workspace";
+import { defaultOnly, scopeNote } from "../scenario-scope";
 
 const args = process.argv.slice(2);
 const valued = new Set(["--calculator", "--jobs"]);
@@ -42,13 +43,15 @@ const summary = (started: number) => {
       `${s.batched} of ${s.inputs} inputs settled in batches.`
     : "";
   console.log(
-    `Mapping traced: ${s.traced} scenario(s) traced, ${s.cached} already current (${minutes(Date.now() - started)} min).${runs} Next: npx geeta-compare docs`,
+    `Mapping traced: ${s.traced} scenario(s) traced, ${s.cached} already current` +
+      (s.regeeta ? `, ${s.regeeta} kept from a trace against another release's GEETA names (GEETA's side traced again)` : "") +
+      ` (${minutes(Date.now() - started)} min).${runs} Next: npx geeta-compare docs`,
   );
 };
 
 const intro = () =>
   console.error(
-    `Tracing the mapping of ${tests.length ? tests.join(", ") : "every test"} into ${mappingCacheFile(calc)}` +
+    `Tracing the mapping of ${tests.length ? tests.join(", ") : "every test"}${scopeNote()} into ${mappingCacheFile(calc)}` +
       (jobs > 1 ? `, ${jobs} scenarios at a time (--jobs)` : "") +
       `. Scenarios already traced are skipped; the others run ${calc.name} for the input values tried (many at once where they can be told apart, ` +
       `using what earlier traces found)` +
@@ -69,8 +72,8 @@ const main = async () => {
   intro();
   if (jobs === 1) {
     buildModel({ tests, trace: true });
-    // A full run drops traces of scenarios that no longer exist (or whose adapter input changed)
-    saveMappingCache(!tests.length);
+    // A full run drops traces of scenarios that no longer exist (or whose adapter input changed); a default-scenarios-only run isn't full
+    saveMappingCache(!tests.length && !defaultOnly());
     return summary(started);
   }
   // Shards an interrupted run left are merged first, so the workers start from every trace there is
@@ -95,7 +98,7 @@ const main = async () => {
   fs.rmSync(claims, { recursive: true, force: true });
   const failed = codes.filter((c) => c !== 0).length;
   // A full run every worker finished drops traces of scenarios that no longer exist (or whose adapter input changed)
-  mergeTraceShards(calc, { counts: true, prune: !tests.length && !failed });
+  mergeTraceShards(calc, { counts: true, prune: !tests.length && !failed && !defaultOnly() });
   if (failed) {
     progress(`${failed} of ${jobs} workers stopped early; what they traced is kept in ${mappingCacheFile(calc)}, so run it again to finish`);
     process.exitCode = 1;

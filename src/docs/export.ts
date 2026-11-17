@@ -14,6 +14,7 @@ import { calculator } from "../calculators";
 import { type Landing, type Mapping, mappingCacheFile } from "./mapping";
 import { writeFindingsExclusions } from "../comparison-config";
 import { geetaLabel } from "../geeta-source";
+import { defaultOnly } from "../scenario-scope";
 import type { DecisionUse } from "../mapping";
 import { WORKSPACE } from "../workspace";
 
@@ -884,7 +885,7 @@ const writeHtml = (dir: string) => {
 
   let pages = 0;
   const ix: string[] = [`<h1>VEERG test scenarios</h1>`];
-  ix.push(`<div class="sub">Generated ${generated} from ${he(geetaLabel())}. Inputs are the fully resolved scenario data. Results: NIR, GEETA and ${he(C)}${version ? ` ${he(version)}` : ""}.${prefix ? ` <b>Filtered</b> to scenarios starting ${he(prefix)}.` : ""}</div>`);
+  ix.push(`<div class="sub">Generated ${generated} from ${he(geetaLabel())}. Inputs are the fully resolved scenario data. Results: NIR, GEETA and ${he(C)}${version ? ` ${he(version)}` : ""}.${prefix ? ` <b>Filtered</b> to scenarios starting ${he(prefix)}.` : ""}${defaultOnly() && !prefix ? " <b>Default scenarios only</b>: each test's first scenario (--default-only or runDefaultScenariosOnly); run docs without it for every scenario." : ""}</div>`);
   ix.push(htmlDashboard());
   for (const test of models) {
     const { match, total, unexplained } = calcCount(test.pages);
@@ -990,7 +991,7 @@ const writeMarkdown = (file: string) => {
 
   w("# VEERG test scenarios");
   w();
-  w(`Generated ${generated} from ${geetaLabel()}. Inputs are the fully resolved scenario data (inheritance and table merges applied).`);
+  w(`Generated ${generated} from ${geetaLabel()}. Inputs are the fully resolved scenario data (inheritance and table merges applied).${defaultOnly() ? " Default scenarios only: each test's first scenario." : ""}`);
   if (prefix) w(`\n**Filtered** to scenarios whose name starts with \`${prefix}\`.`);
   w();
   w("Results columns:");

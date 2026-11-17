@@ -23,7 +23,8 @@ const COMMANDS = {
 const [command, ...args] = process.argv.slice(2);
 if (!command || command === "help" || command === "--help" || !COMMANDS[command]) {
   if (command && !["help", "--help"].includes(command)) console.error(`Unknown command "${command}".\n`);
-  console.log("Usage: geeta-compare <command> [arguments] [--calculator <id>]\n");
+  console.log("Usage: geeta-compare <command> [arguments] [--calculator <id>] [--default-only]\n");
+  console.log("--default-only: each test's default scenario only (test, mapping, mapping trace, docs, explain, neutral check)\n");
   for (const [name, [, about]] of Object.entries(COMMANDS)) console.log(`  ${name.padEnd(9)} ${about}`);
   process.exit(command && !["help", "--help"].includes(command) ? 1 : 0);
 }

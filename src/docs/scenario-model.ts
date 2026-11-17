@@ -14,6 +14,7 @@ import type { ExplanationRecord } from "../explain/store";
 import { moduleFor } from "../neutral/registry";
 import { type Mapping, progress, scenarioMapping, traceStats, worker } from "./mapping";
 import { isExcluded } from "../comparison-config";
+import { defaultOnly } from "../scenario-scope";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
 import { type DecisionUse, decisionNotes, decisionUses, resetDecisionUses } from "../mapping";
@@ -415,6 +416,8 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
       shown = [...all.filter((n) => bases.has(n)).map((name) => ({ name, isBase: true })), ...all.filter((n) => selected.has(n)).map((name) => ({ name, isBase: false }))];
     }
 
+    // A default-scenarios-only run (scenario-scope.ts) shows each test's first scenario, unless a prefix picked others
+    if (defaultOnly() && !opts.scenarioPrefix) shown = shown.filter(({ name }) => name === all[0]);
     // Scenarios comparison.config.json excludes are left out of the docs entirely
     const anyShown = shown.length > 0;
     shown = shown.filter(({ name }) => !isExcluded(key, name));
@@ -468,7 +471,10 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
     models.push({ id, group, key, missing: false, pages });
     const traced = traceStats.traced - before.traced;
     const cached = traceStats.cached - before.cached;
-    const mapping = traced ? `, mapping traced for ${traced}${cached ? ` (${cached} cached)` : ""}` : "";
+    const regeeta = traceStats.regeeta - before.regeeta;
+    const mapping =
+      (traced ? `, mapping traced for ${traced}${cached ? ` (${cached} cached)` : ""}` : "") +
+      (regeeta ? `, ${regeeta} mapping${regeeta === 1 ? "" : "s"} kept from another release (GEETA's side traced again)` : "");
     if (!worker) console.error(`  ${key}: ${pages.length} scenario${pages.length === 1 ? "" : "s"}, ${((Date.now() - started) / 1000).toFixed(1)}s${mapping}`);
   }
   return models;
