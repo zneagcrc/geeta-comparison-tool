@@ -78,8 +78,8 @@ would sit under `workbook` (`cells`, `tables`); none does now.
   cent stay as numbers, with "(per cent)" in the key. (VEERG_0.0.0.4 writes percentages as numbers; the neutral
   values are the same as before.)
 - **The same in every release.** The conversion is written against VEERG_0.0.0.3's test input names and translates
-  newer releases with their `Schemas/renames.json` (`src/neutral/geeta-format.ts`), so a scenario's neutral file only
-  changes where the release changed its data.
+  newer releases with their `Schemas/renames.json` (`src/neutral/geeta-format.ts`), one release at a time back to
+  0.0.0.3, so a scenario's neutral file only changes where a release changed its data.
 - **`site`** holds the site records the workbook derives climate zone, rainfall region etc. from.
 - **`workbook`** holds what isn't a methodology input: front-end conveniences (farm name, the dairy production system
   template), the workbook's Method 1 lookup tables (Appendix A defaults, filled in by formulas), and columns the

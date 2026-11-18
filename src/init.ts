@@ -10,7 +10,7 @@ const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const TEMPLATE = path.join(PACKAGE_ROOT, "templates", "workspace");
 const GEETA_REPO = "zneagcrc/GEETA";
 /** Used when the GEETA releases can't be listed (offline): the latest known release with a test set. */
-const FALLBACK_RELEASE = "VEERG_0.0.0.4";
+const FALLBACK_RELEASE = "VEERG_0.0.0.5";
 /** The Claude Code version a new workspace gets (for `geeta-compare llm`). */
 const CLAUDE_CODE = "^2.1.322";
 

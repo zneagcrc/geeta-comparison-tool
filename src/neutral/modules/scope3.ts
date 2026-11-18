@@ -79,6 +79,65 @@ const fuelFields = (consumedUnit: boolean) => [
 ];
 
 /** Livestock purchases (15.1): N_co head, W_co by method; the class / origin columns each type has. */
+/**
+ * Custom emission factors (VEERG_0.0.0.5's "Custom Scope 3" sheet): per purchase category, one row per purchase the
+ * farm has its own factor for, with the factor's source, source type and proof. The other columns (the purchase, its
+ * class and the default factor) the workbook fills in from the purchase rows.
+ */
+const CUSTOM_EF_TABLES: [string, string, string[]][] = [
+  ["Livestock_BeefCattle", "livestock: beef cattle", ["TransactionName", "PurchaseClass", "SourceRegion", "DefaultEF"]],
+  ["Livestock_Dairy", "livestock: dairy cattle", ["TransactionName", "DefaultEF"]],
+  ["Livestock_Sheep", "livestock: sheep", ["TransactionName", "PurchaseClass", "SourceRegion", "DefaultEF"]],
+  ["Livestock_Pigs", "livestock: pigs", ["TransactionName", "DefaultEF"]],
+  ["Livestock_Poultry", "livestock: poultry", ["TransactionName", "DefaultEF"]],
+  ["Livestock_OtherLivestock", "livestock: other livestock", ["TransactionName", "LivestockType", "DefaultEF"]],
+  ["Feed_FeedBlends", "feed: blends", ["BlendName", "Ingredients", "DefaultEFFromIngredientEFs"]],
+  ["Feed_FeedRations", "feed: rations", ["Product", "DefaultEF"]],
+  ["Feed_Aquaculture", "feed: aquaculture", ["Product", "DefaultEF"]],
+  ["MineralSupplements", "mineral supplements", ["Product", "DefaultEF"]],
+  ["Fertiliser_BrandedProducts", "fertiliser: branded products", ["Product", "Ingredients", "DefaultEFFromIngredientEFs"]],
+  ["Fertiliser_CustomBlends", "fertiliser: custom blends", ["Product", "Ingredients", "DefaultEFFromIngredientEFs"]],
+  ["Agrichemicals", "agrichemicals", ["ActiveIngredient", "QuantityPurchased", "DefaultEF"]],
+  ["SoilAmeliorants", "soil ameliorants", ["ProductName", "DefaultEFFromIngredientEFs"]],
+  ["PackagingMaterials", "packaging", ["PackagingName", "PrimaryMaterial", "DefaultEF"]],
+  ["Other_ChemicalsCleaning", "other: cleaning chemicals", ["Product", "ChemicalType", "DefaultEF"]],
+  ["Other_ChemicalsPharmacy", "other: pharmacy chemicals", ["Product", "ChemicalType", "DefaultEF"]],
+  ["Other_Seed", "other: seed", ["Product", "DefaultEF"]],
+  ["Other_Misc", "other: miscellaneous", ["Product", "DefaultEF"]],
+  ["Other_Uncategorised", "other: uncategorised", ["Product", "ProductUnit"]],
+];
+/** What the workbook fills in, by column. */
+const CUSTOM_EF_FILLED: Record<string, string> = {
+  TransactionName: "transaction name",
+  PurchaseClass: "livestock type c",
+  SourceRegion: "origin o",
+  LivestockType: "livestock type c",
+  DefaultEF: "default emission factor (kg CO2e/kg)",
+  DefaultEFFromIngredientEFs: "default emission factor from the ingredients' (kg CO2e/kg)",
+  BlendName: "blend name",
+  Ingredients: "ingredients",
+  Product: "product",
+  ProductName: "product name",
+  ActiveIngredient: "active ingredient",
+  QuantityPurchased: "quantity purchased",
+  PackagingName: "description",
+  PrimaryMaterial: "packaging type p",
+  ChemicalType: "type",
+  ProductUnit: "product unit",
+};
+const customEfTable = ([name, label, filled]: [string, string, string[]]): RowTableSpec => ({
+  ...rows(`X_Table_CustomScope3_${name}_RowsToCols`, `custom emission factors: ${label}`, [
+    ...filled.map((field) => ({ field, key: `${CUSTOM_EF_FILLED[field]} ${CALC}` })),
+    // The unit the factor is per (an input on the miscellaneous sheet, filled in on the uncategorised one)
+    { field: "EFUnit", key: "emission factor unit" },
+    { field: "CustomEF", key: "custom emission factor" },
+    { field: "CustomEFSource", key: "custom emission factor source" },
+    { field: "CustomEFSourceType", key: "custom emission factor source type" },
+    { field: "CustomEFProofLink", key: "custom emission factor proof link" },
+  ]),
+  props: { ...ROWS, Replace: true },
+});
+
 const purchaseFields = (extra: RowTableSpec["fields"]) => [
   { field: "TransactionName", key: "transaction description" },
   ...extra,
@@ -204,7 +263,12 @@ export const SCOPE3: ModuleSpec = {
     ),
     rows("Table_Input_LivestockPurchases_Pigs", "pigs purchased", purchaseFields([{ field: "Class", key: "class" }])),
     rows("Table_Input_LivestockPurchases_Poultry", "poultry purchased", purchaseFields([{ field: "Class", key: "class" }])),
-    rows("Table_Input_LivestockPurchases_OtherLivestock", "other livestock purchased", purchaseFields([{ field: "Class", key: "livestock type c" }])),
+    rows(
+      "Table_Input_LivestockPurchases_OtherLivestock",
+      "other livestock purchased",
+      // PurchaseClass from VEERG_0.0.0.5 (Class stays "livestock type c", as before it)
+      purchaseFields([{ field: "Class", key: "livestock type c" }, { field: "PurchaseClass", key: "purchase class" }]),
+    ),
     // 15.5 agrichemicals: Q_h is the active ingredient applied
     rows("Table_Input_Pesticides", "agrichemicals applied", pesticideFields),
     // 15.8 packaging: Q_p = units x weight per unit
@@ -245,5 +309,7 @@ export const SCOPE3: ModuleSpec = {
     // Scope 2 / 15.11 electricity certificates
     rows("Table_Input_RECSurrendered", "RECs voluntarily surrendered", REC_COLS),
     rows("Table_Input_RECConsumedByEntity", "RECs issued for electricity produced on-site and consumed", REC_COLS),
+    // Custom emission factors (from VEERG_0.0.0.5)
+    ...CUSTOM_EF_TABLES.map(customEfTable),
   ],
 };

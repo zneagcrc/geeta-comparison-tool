@@ -120,6 +120,8 @@ export const AG_RESIDUE: ModuleSpec = {
     { cell: "X_Cell_Pasture_IrrigationMethod", place: "inputs", key: "irrigation type ir (pasture)" },
     { cell: "X_Cell_Pasture_AreaUnderPasture", place: "inputs", key: "area of pasture (ha)" },
     { cell: "X_Cell_Pasture_AreaRemovedOrRenewed", place: "inputs", key: "A_p" },
+    // Y_p, the pasture yield (t DM/ha; from VEERG_0.0.0.5)
+    { cell: "X_Cell_Pasture_YieldPerHectare", place: "inputs", key: "Y_p" },
   ],
   tables: [],
 };

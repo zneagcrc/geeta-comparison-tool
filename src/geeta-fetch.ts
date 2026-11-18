@@ -12,6 +12,7 @@ import crypto from "node:crypto";
 import { unzipSync } from "fflate";
 import { RELEASES_DIR, ROOT, geetaConfig } from "./geeta-source";
 import { downloadAsset } from "./geeta-github";
+import { SPEC_RELEASE, renamesChain } from "./neutral/geeta-format";
 
 /** The manifest toolingContract versions this tool can read (bumped when the fixture format changes). */
 const SUPPORTED_CONTRACTS = [1, 2];
@@ -27,12 +28,11 @@ type Manifest = {
 const args = process.argv.slice(2);
 const force = args.includes("--force");
 const { repo, release: pinned, tokenEnv, token } = geetaConfig();
-const release = args.find((a) => !a.startsWith("--")) ?? pinned;
-const target = path.join(RELEASES_DIR, release);
+const requested = args.find((a) => !a.startsWith("--")) ?? pinned;
 
 const sha256 = (data: Uint8Array) => crypto.createHash("sha256").update(data).digest("hex");
 
-const download = async (asset: string): Promise<Uint8Array> => {
+const download = async (release: string, asset: string): Promise<Uint8Array> => {
   process.stdout.write(`Downloading ${asset}${token ? ` (with the token in ${tokenEnv})` : ""} ... `);
   try {
     const data = await downloadAsset(repo, release, asset, tokenEnv, token);
@@ -57,13 +57,15 @@ const entries = (zip: Uint8Array, name: string) => {
   return out;
 };
 
-const main = async () => {
-  if (fs.existsSync(path.join(target, "Test", "Test.json")) && !force) {
+/** Downloads one release into geeta-releases/<release>/, checked against its manifest. */
+const fetchRelease = async (release: string, again: boolean) => {
+  const target = path.join(RELEASES_DIR, release);
+  if (fs.existsSync(path.join(target, "Test", "Test.json")) && !again) {
     console.log(`${release} is already in ${path.relative(ROOT, target)} (--force downloads it again).`);
     return;
   }
 
-  const main = entries(await download(`${release}.zip`), `${release}.zip`);
+  const main = entries(await download(release, `${release}.zip`), `${release}.zip`);
   const manifestData = main.get("manifest.json");
   if (!manifestData) throw new Error(`${release}.zip has no manifest.json`);
   const manifest = JSON.parse(Buffer.from(manifestData).toString("utf8")) as Manifest;
@@ -73,7 +75,7 @@ const main = async () => {
     throw new Error(`${release} uses tooling contract ${contract ?? "(none)"}; this tool reads ${SUPPORTED_CONTRACTS.join(", ")}. Update geeta-comparison-tool.`);
   if (!manifest.tests) throw new Error(`${release} has no test set (no "tests" in its manifest), so it can't be compared with.`);
 
-  const testsZip = await download(manifest.tests.asset);
+  const testsZip = await download(release, manifest.tests.asset);
   if (sha256(testsZip) !== manifest.tests.sha256) throw new Error(`${manifest.tests.asset}: SHA-256 doesn't match the manifest`);
   const tests = entries(testsZip, manifest.tests.asset);
 
@@ -106,7 +108,20 @@ const main = async () => {
 
   console.log(`${release}: ${expected.size} files checked against its manifest, written to ${path.relative(ROOT, target)}`);
   if (unlisted.length) console.log(`  not in the manifest (kept): ${unlisted.join(", ")}`);
-  if (release !== pinned) console.log(`  geeta.config.json pins ${pinned}; to use ${release}, set geeta.local.json { "release": "${release}" }`);
+};
+
+const main = async () => {
+  await fetchRelease(requested, force);
+  // The neutral specs read VEERG_0.0.0.3's format: a newer release is translated with each release's renames list in
+  // turn, so the releases in between are needed too (src/neutral/geeta-format.ts)
+  for (let missing = renamesChain(path.join(RELEASES_DIR, requested)).missing; missing; ) {
+    console.log(`${requested}'s changes are listed from ${missing}, and the neutral format reads ${SPEC_RELEASE}'s: fetching ${missing} for its list too.`);
+    await fetchRelease(missing, false);
+    const next = renamesChain(path.join(RELEASES_DIR, requested)).missing;
+    if (next === missing) throw new Error(`${missing} has no Schemas/renames.json, so ${requested} can't be translated to ${SPEC_RELEASE}'s format`);
+    missing = next;
+  }
+  if (requested !== pinned) console.log(`  geeta.config.json pins ${pinned}; to use ${requested}, set geeta.local.json { "release": "${requested}" }`);
 };
 
 main().catch((e) => {
