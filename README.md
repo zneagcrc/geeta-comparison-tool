@@ -305,7 +305,7 @@ fraction, no more `"20%"` strings) and keys monthly tables `Month1`..`Month12` f
 The neutral conversion reads the release's `Schemas/renames.json` and translates, so the same scenario gives the same
 neutral file in every release. Each release lists its changes from the one before (0.0.0.5's from 0.0.0.4), and the
 conversion goes back step by step to 0.0.0.3, so it needs every release in between: `fetch` downloads the ones that
-aren't in `geeta-releases/` yet (for a GEETA working copy, the `Versions/<release>` folders beside it are used). What
+aren't in `geeta-releases/` yet (a GEETA working copy also finds them in its own `Versions/<release>` folders). What
 does change is the data itself, where a release changed it: inputs it removed (`X_Cell_Site_Region`, the poultry
 production system; in 0.0.0.5 the market-based renewable percentages and the dairy solids-separation inputs), inputs it
 added (0.0.0.5: the pasture yield `Y_p`, a purchase class for other livestock, and the custom Scope 3 emission factors,

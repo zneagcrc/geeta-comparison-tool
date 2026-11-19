@@ -13,7 +13,7 @@
 // Changes that aren't renames (new inputs, inputs that moved) are in the specs themselves, which accept both forms.
 import fs from "node:fs";
 import path from "node:path";
-import { TEST_DIR } from "../geeta-source";
+import { RELEASES_DIR, TEST_DIR } from "../geeta-source";
 
 /** The release the specs were written against: the chain of renames lists must reach it. */
 export const SPEC_RELEASE = "VEERG_0.0.0.3";
@@ -70,9 +70,17 @@ const MONTH_KEY = /^(January|February|March|April|May|June|July|August|September
 
 // --- The chain ------------------------------------------------------------------------------------------------------
 
-/** Where a release's renames.json is, given the folder of the release at hand (releases sit side by side). */
-export const renamesFileOf = (releaseDir: string, release?: string) =>
-  path.join(release ? path.resolve(releaseDir, "..", release) : releaseDir, "Schemas", "renames.json");
+/**
+ * Where a release's renames.json is, given the folder of the test set at hand: that folder's own, or for an earlier
+ * release the first that exists of the release beside it (geeta-releases/<release>, or Versions/<release> beside a
+ * GEETA snapshot), in its Versions folder (a GEETA working copy), or in this workspace's geeta-releases.
+ */
+export const renamesFileOf = (releaseDir: string, release?: string) => {
+  const file = (dir: string) => path.join(dir, "Schemas", "renames.json");
+  if (!release) return file(releaseDir);
+  const candidates = [path.resolve(releaseDir, "..", release), path.join(releaseDir, "Versions", release), path.join(RELEASES_DIR, release)].map(file);
+  return candidates.find((f) => fs.existsSync(f)) ?? candidates[candidates.length - 1];
+};
 
 /**
  * The renames lists from a release back to the specs' release, newest first ([] for a release in the specs' own
@@ -101,7 +109,7 @@ const load = () => {
     throw new Error(
       `${path.relative(process.cwd(), steps[steps.length - 1].file)} lists the changes from ${missing}, whose own list (${path.relative(process.cwd(), renamesFileOf(releaseDir, missing))}) ` +
         `isn't here: the neutral specs are written against ${SPEC_RELEASE}, so every release in between is needed. ` +
-        `npx geeta-compare fetch downloads them (for a GEETA working copy, the Versions/<release> folders beside it).`,
+        `npx geeta-compare fetch downloads them into this workspace (a GEETA working copy also finds them in its Versions/<release> folders).`,
     );
   // Test key ("ManureManagement.Pigs") -> its workbook (TestExcelFile, "4_5_ManureManagement_Pigs")
   const tests = new Map<string, string>();
