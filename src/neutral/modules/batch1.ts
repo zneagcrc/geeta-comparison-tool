@@ -27,6 +27,23 @@ export const FUEL: ModuleSpec = {
         { field: "PercentConsumed", key: "fraction consumed in the reporting period", percent: true },
       ],
     },
+    {
+      // From VEERG_0.0.0.6 the Fuel workbook also holds contractors' fuel. No chapter 8 result
+      // uses it (it is Scope 3, 15.7): the Scope3 test's wording
+      kind: "rows",
+      table: "Table_Input_Fuel_Contractors",
+      place: "inputs",
+      key: "fuel used by contractors (15.7)",
+      rowPrefix: "Row",
+      props: ROWS,
+      fields: [
+        { field: "FuelUse", key: "use (transport type or stationary combustion)" },
+        { field: "FuelType", key: "fuel type q" },
+        { field: "AmountPurchased", key: "amount purchased" },
+        { field: "AmountUnit", key: "unit" },
+        { field: "PercentConsumed", key: "fraction consumed in the reporting period", percent: true },
+      ],
+    },
   ],
 };
 

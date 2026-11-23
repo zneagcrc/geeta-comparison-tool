@@ -32,7 +32,7 @@ const local = ((): LocalConfig => {
   const p = inWorkspace("geeta.local.json");
   if (!fs.existsSync(p)) return {};
   try {
-    return JSON.parse(fs.readFileSync(p, "utf8")) as LocalConfig;
+    return JSON.parse(fs.readFileSync(p, "utf8").replace(/^﻿/, "")) as LocalConfig;
   } catch (e) {
     throw new Error(`geeta.local.json isn't valid JSON: ${(e as Error).message}`);
   }

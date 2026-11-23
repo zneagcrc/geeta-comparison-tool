@@ -309,7 +309,9 @@ aren't in `geeta-releases/` yet (a GEETA working copy also finds them in its own
 does change is the data itself, where a release changed it: inputs it removed (`X_Cell_Site_Region`, the poultry
 production system; in 0.0.0.5 the market-based renewable percentages and the dairy solids-separation inputs), inputs it
 added (0.0.0.5: the pasture yield `Y_p`, a purchase class for other livestock, and the custom Scope 3 emission factors,
-`custom emission factors: <category>`), options it renamed or corrected (e.g. `"Sprinkler irrigation"`; organic
+`custom emission factors: <category>`; 0.0.0.6: the dairy herd's annual milk production and lactation days in place
+of the daily amount, solids separation from dairy sump and dispersal, solid storage as a pig stage 2 system with
+separation only from lagoons, digesters and pit storage, and the contractors' fuel table in the Fuel workbook), options it renamed or corrected (e.g. `"Sprinkler irrigation"`; organic
 fertiliser is now chosen by manure source, `"Beef cattle"`, with its N content looked up), and test values it fixed.
 A test that gains named scenarios calls its old single scenario `"Default scenario"`. An adapter that reads GEETA's test input directly, rather than through the neutral
 format, sees the release's own names.

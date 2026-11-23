@@ -125,12 +125,16 @@ export const ENTERIC_PIGS: ModuleSpec = {
   ],
 };
 
-/** Pig primary (stage 1) systems with their own workbook table and solids-separation cells. */
+/** Pig primary (stage 1) systems with their own workbook table. */
 const PIG_PRIMARY = ["AnaerobicLagoon", "Drylot", "DigesterCoveredLagoons", "DeepLitter", "PitStorage"] as const;
+/** Primary systems with solids-separation cells. From VEERG_0.0.0.6 only lagoons, digesters and pit storage
+ * (VEERG 4.5.1.1 (3)-(4): m = 1, 7, 9); releases before it also have drylot and deep litter, kept so they convert. */
+const PIG_SEPARABLE = PIG_PRIMARY;
 const PIG_FROM = [...PIG_PRIMARY, "SolidStorage"] as const;
-const PIG_TO = ["AnaerobicLagoon", "DigesterCoveredLagoons", "DeepLitter", "PitStorage", "DirectApplication"] as const;
+// Solid storage is a stage 2 system from VEERG_0.0.0.6 (from every primary system but itself)
+const PIG_TO = ["AnaerobicLagoon", "DigesterCoveredLagoons", "DeepLitter", "PitStorage", "SolidStorage", "DirectApplication"] as const;
 
-const pigSeparation: CellSpec[] = PIG_PRIMARY.flatMap((m) => [
+const pigSeparation: CellSpec[] = PIG_SEPARABLE.flatMap((m) => [
   { cell: `X_Cell_Pigs_Stage1MMS_${m}_SolidsSeparated`, place: "inputs" as const, key: ["solids separated", MMS[m]], values: { Yes: true, No: false } },
   { cell: `X_Cell_Pigs_Stage1MMS_${m}_AmountSeparated_Method1`, place: "inputs" as const, key: ["SS_m (Method 1)", MMS[m]], percent: true },
   { cell: `X_Cell_Pigs_Stage1MMS_${m}_AmountSeparated_Method2`, place: "inputs" as const, key: ["SS_m (Method 2)", MMS[m]], percent: true },
@@ -235,6 +239,10 @@ const DAIRY_MILK_CELLS: CellSpec[] = [
   { cell: "X_Cell_Dairy_MilkProductionUnit", place: "inputs", key: "MPU" },
   // MP_j (litres/head/day) or MS_j (kg milk solids/head/day) for milking cows, by MPU
   { cell: "X_Cell_Dairy_MilkProductionAmount", place: "inputs", key: "milk production (milking cows, in MPU)" },
+  // From VEERG_0.0.0.6 the user records the herd's annual production and the lactation days, and the
+  // workbook calculates the daily amount above from them
+  { cell: "X_Cell_Dairy_MilkProductionAnnual", place: "inputs", key: "annual milk production (in MPU per year)" },
+  { cell: "X_Cell_Dairy_MilkLactationDays", place: "inputs", key: "lactation days" },
 ];
 
 export const ENTERIC_DAIRY: ModuleSpec = {

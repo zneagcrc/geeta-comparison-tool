@@ -20,7 +20,7 @@ const wildcard = (pattern: string) => new RegExp(`^${pattern.replace(/[.+?^${}()
 let rules: (ExclusionRule & { testRe: RegExp; scenarioRe?: RegExp })[] | undefined;
 const loadRules = () => {
   if (rules) return rules;
-  const config = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) : { exclude: [] };
+  const config = fs.existsSync(CONFIG_FILE) ? JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").replace(/^﻿/, "")) : { exclude: [] };
   rules = (config.exclude ?? []).map((r: ExclusionRule, i: number) => {
     if (!r.test || !r.reason) throw new Error(`${path.basename(CONFIG_FILE)}: exclude[${i}] needs "test" and "reason"`);
     return { ...r, testRe: wildcard(r.test), ...(r.scenario !== undefined ? { scenarioRe: wildcard(r.scenario) } : {}) };

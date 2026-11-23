@@ -68,7 +68,7 @@ export const workspaceConfig = (): WorkspaceConfig => {
   if (config) return config;
   const file = inWorkspace(CONFIG_FILE_NAME);
   try {
-    config = JSON.parse(fs.readFileSync(file, "utf8")) as WorkspaceConfig;
+    config = JSON.parse(fs.readFileSync(file, "utf8").replace(/^﻿/, "")) as WorkspaceConfig;
   } catch (e) {
     return fail(`${file} isn't valid JSON: ${(e as Error).message}`);
   }

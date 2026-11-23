@@ -20,7 +20,7 @@ const configSays = () => {
   if (fromConfig === undefined) {
     const file = inWorkspace("comparison.config.json");
     try {
-      fromConfig = fs.existsSync(file) && JSON.parse(fs.readFileSync(file, "utf8")).runDefaultScenariosOnly === true;
+      fromConfig = fs.existsSync(file) && JSON.parse(fs.readFileSync(file, "utf8").replace(/^﻿/, "")).runDefaultScenariosOnly === true;
     } catch {
       fromConfig = false;
     }

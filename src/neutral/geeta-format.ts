@@ -2,7 +2,7 @@
 // the translation to and from newer ones. The specs speak tooling contract 1 (VEERG_0.0.0.3): percent strings ("20%"),
 // monthly tables keyed by month name ("January" or "January 2025"), and that release's field names. From tooling
 // contract 2 (VEERG_0.0.0.4) each release ships Schemas/renames.json, which lists its changes from the release before
-// it, per input workbook. A release's changes from 0.0.0.3 are those lists in turn (0.0.0.5 -> 0.0.0.4 -> 0.0.0.3):
+// it, per input workbook. A release's changes from 0.0.0.3 are those lists in turn (0.0.0.6 -> 0.0.0.5 -> 0.0.0.4 -> 0.0.0.3):
 // each earlier list is read from that release's folder beside this one (geeta-releases/<release>/, or a GEETA working
 // copy's Versions/<release>/); `geeta-compare fetch` downloads the earlier releases a chain needs. This file translates
 // along the chain, so the specs and the neutral format stay as they are:
