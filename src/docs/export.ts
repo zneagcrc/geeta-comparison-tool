@@ -288,6 +288,16 @@ body.index .count.off{color:var(--status-error)}
 .tile.off b{color:var(--status-error)}
 table.failing td.test{font-weight:700;background:var(--fleece-white)}
 table.failing td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.issues td{vertical-align:top}
+table.issues td.iss-cause{width:40%}
+table.issues .iss-title{font-weight:700;margin:.3rem 0 .2rem}
+table.issues details.iss-expl{margin:.25rem 0}
+table.issues details.iss-expl>summary{cursor:pointer;font-size:var(--font-size-small);color:var(--text-secondary)}
+table.issues details.iss-expl>.n{margin-top:.2rem}
+table.issues .iss-note{font-size:var(--font-size-small);color:var(--text-secondary);line-height:1.45;margin-top:.25rem}
+table.issues .iss-test{margin:0 0 .3rem}
+table.issues .iss-test>a:first-child{font-weight:700}
+table.issues .n{font-size:var(--font-size-fine);color:var(--text-secondary)}
 .chip{display:inline-block;font-size:var(--font-size-fine);background:var(--fleece-white);border-radius:3px;padding:1px 6px;margin:1px 0;cursor:help;white-space:nowrap}
 .chip b{color:var(--status-error)}
 .chip.unexplained{background:var(--status-error-surface);color:var(--status-error);font-weight:700}
@@ -784,7 +794,24 @@ ${GUTTER_SCRIPT}
 `;
 };
 
-/** Index dashboard: totals, then every scenario where the calculator differs from GEETA, with the causes. */
+/**
+ * Section titles from the calculator's findings document: "### 12. Dairy and poultry: N2O ..." gives 12, and a
+ * lettered item "- **18a. 15.9 other purchases (Coverage gap).** ..." gives 18a (bold text, final full stop dropped).
+ */
+const findingTitles = (): Map<string, string> => {
+  const titles = new Map<string, string>();
+  const file = path.resolve(ROOT, calculator().findings);
+  if (!fs.existsSync(file)) return titles;
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    const heading = /^#{2,6}\s+(\d+[a-z]?)\.\s+(.+?)\s*$/.exec(line);
+    const item = /^\s*[-*]\s+\*\*(\d+[a-z]?)\.\s+(.+?)\.?\*\*/.exec(line);
+    const m = heading ?? item;
+    if (m && !titles.has(m[1])) titles.set(m[1], m[2]);
+  }
+  return titles;
+};
+
+/** Index dashboard: totals, then each issue where the calculator differs from GEETA, with the scenarios it affects. */
 const htmlDashboard = () => {
   const covered = models.filter((t) => t.pages.some((p) => p.calc.status === "ok"));
   const notCovered = models.filter((t) => !t.missing && t.pages.length && t.pages.every((p) => p.calc.status === "none"));
@@ -828,42 +855,91 @@ const htmlDashboard = () => {
   out.push(`</div>`);
 
   if (failing.length) {
-    out.push(`<h3>Scenarios where ${he(C)} differs from GEETA</h3><table class="failing"><thead><tr><th>Test</th><th>Scenario</th><th>Differing</th><th>Why</th></tr></thead><tbody>`);
+    // One row per issue: a section of the findings document (every explanation record that names it, whichever
+    // test or scenario it was written for), a record with no section, or the unexplained differences. Each issue is
+    // listed once with the scenarios it accounts for. Marked ✓ (every check passes), ✗ (any check fails) or – (no
+    // check), and stale when any of its results' evidence changed.
+    type Issue = {
+      section?: string;
+      /** Its explanations, each with the results and tests it accounts for */
+      records: { d: NonNullable<ResultRow["record"]>; results: number; tests: Set<string> }[];
+      checked: boolean;
+      failed: boolean;
+      outdated: boolean;
+      results: number;
+      tests: Map<TestModel, Map<ScenarioPage, number>>;
+    };
+    const issues = new Map<string, Issue>();
     for (const { test, pages } of failing)
-      pages.forEach(({ page, differing, total }, i) => {
-        // One chip per cause, marked ✓ (every check passes), ✗ (any check fails) or – (no check)
-        const causes = new Map<string, { d: NonNullable<ResultRow["record"]>; checked: boolean; failed: boolean; outdated: boolean }>();
-        let unexplained = 0;
+      for (const { page, differing } of pages)
         for (const r of differing) {
-          if (!r.record) {
-            unexplained++;
-            continue;
+          const key = !r.record ? "unexplained" : r.record.section ? `section ${r.record.section}` : `record ${r.record.id}`;
+          const issue: Issue = issues.get(key) ?? { section: r.record?.section, records: [], checked: false, failed: false, outdated: false, results: 0, tests: new Map() };
+          if (r.record) {
+            let rec = issue.records.find((x) => x.d.id === r.record!.id);
+            if (!rec) issue.records.push((rec = { d: r.record, results: 0, tests: new Set() }));
+            rec.results++;
+            rec.tests.add(test.id);
           }
-          const key = r.record.id;
-          const c = causes.get(key) ?? { d: r.record, checked: false, failed: false, outdated: false };
-          if (r.review && r.review !== "current") c.outdated = true;
-          if (r.check) c.checked = true;
-          if (r.check && !r.check.ok) c.failed = true;
-          causes.set(key, c);
+          if (r.review && r.review !== "current") issue.outdated = true;
+          if (r.check) issue.checked = true;
+          if (r.check && !r.check.ok) issue.failed = true;
+          issue.results++;
+          const scenarios = issue.tests.get(test) ?? new Map<ScenarioPage, number>();
+          scenarios.set(page, (scenarios.get(page) ?? 0) + 1);
+          issue.tests.set(test, scenarios);
+          issues.set(key, issue);
         }
-        const chips = [
-          ...[...causes.values()].map(({ d, checked, failed, outdated }) => {
-            const mark = failed
-              ? `<span class="mark">✗ suspect</span>`
-              : checked
-                ? `<span class="mark ok">✓</span>`
-                : `<span class="mark none">–</span>`;
-            const stale = outdated ? `<span class="mark stale">stale</span>` : "";
-            return `<span class="chip${failed ? " suspect" : ""}" title="${he(d.note)} (${he(provenance(d))})"><b>#${he(d.section ?? d.id)}</b> ${he(d.type)}${mark}${stale}</span>`;
-          }),
-          ...(unexplained ? [`<span class="chip unexplained">${unexplained} unexplained</span>`] : []),
-        ];
-        const testCell = i === 0 ? `<td rowspan="${pages.length}" class="test"><a href="#${he(slug(test.id))}">${he(test.id)}</a></td>` : "";
-        out.push(
-          `<tr>${testCell}<td><a href="${he(test.id)}/${he(page.slug)}.html">${he(page.title)}</a></td><td class="num">${differing.length}/${total}</td><td>${chips.join(" ")}</td></tr>`,
-        );
-      });
-    out.push(`</tbody></table><p class="note">Hover a cause for the LLM's explanation; the number is the section in ${he(calculator().findings)}. ✓ the numbers fit the explanation; ✗ they don't (diagnose again); – no numeric check.</p>`);
+    // Unexplained first, then the issues behind the most results
+    const ordered = [...issues.values()].sort((a, b) => Number(a.records.length > 0) - Number(b.records.length > 0) || b.results - a.results);
+    const titles = findingTitles();
+
+    const scenarioList = (tests: Issue["tests"]) =>
+      [...tests]
+        .map(([test, scenarios]) => {
+          const pageLink = (page: ScenarioPage, text: string) => `<a href="${he(test.id)}/${he(page.slug)}.html">${he(text)}</a>`;
+          // A test with a single scenario: the test name links straight to it
+          if (test.pages.filter((p) => p.calc.status === "ok").length === 1) {
+            const [[page, n]] = [...scenarios];
+            return `<div class="iss-test">${pageLink(page, test.id)}&nbsp;<span class="n">(${n})</span></div>`;
+          }
+          return `<div class="iss-test"><a href="#${he(slug(test.id))}">${he(test.id)}</a>: ${[...scenarios]
+            .map(([page, n]) => `${pageLink(page, page.title)}&nbsp;<span class="n">(${n})</span>`)
+            .join(", ")}</div>`;
+        })
+        .join("");
+    const scenarioCount = (tests: Issue["tests"]) => [...tests.values()].reduce((n, s) => n + s.size, 0);
+
+    out.push(
+      `<h3>Why ${he(C)} differs from GEETA</h3><table class="failing issues"><thead><tr><th>Issue</th><th>Results</th><th>Scenarios (differing results in each)</th></tr></thead><tbody>`,
+    );
+    for (const issue of ordered) {
+      const { records, section, checked, failed, outdated } = issue;
+      let cause: string;
+      if (!records.length) cause = `<span class="chip unexplained">unexplained</span><div class="iss-note">No stored explanation yet: npm run explain -- status</div>`;
+      else {
+        const mark = failed ? `<span class="mark">✗ suspect</span>` : checked ? `<span class="mark ok">✓</span>` : `<span class="mark none">–</span>`;
+        const stale = outdated ? `<span class="mark stale">stale</span>` : "";
+        const types = [...new Set(records.map((x) => x.d.type))].join(", ");
+        // The explanations, the one behind the most results first and open; the others collapsed
+        const sorted = [...records].sort((a, b) => b.results - a.results || b.d.note.length - a.d.note.length);
+        const title = section && titles.get(section);
+        const explanations = sorted
+          .map(({ d, results, tests }, i) => {
+            const label = `${records.length > 1 ? `Explanation ${i + 1} of ${records.length}` : "Explanation"}: ${[...tests].join(", ")} &middot; ${results} result${results === 1 ? "" : "s"}`;
+            return `<details class="iss-expl"${i === 0 ? " open" : ""}><summary>${label}</summary><div class="iss-note">${he(d.note)}</div><div class="n">${he(provenance(d))}</div></details>`;
+          })
+          .join("");
+        cause = `<span class="chip${failed ? " suspect" : ""}"><b>#${he(section ?? sorted[0].d.id)}</b> ${he(types)}${mark}${stale}</span>${title ? `<div class="iss-title">${he(title)}</div>` : ""}${explanations}`;
+      }
+      const n = scenarioCount(issue.tests);
+      out.push(
+        `<tr><td class="iss-cause">${cause}</td><td class="num">${issue.results}<div class="n">${n} scenario${n === 1 ? "" : "s"}</div></td><td class="iss-scen">${scenarioList(issue.tests)}</td></tr>`,
+      );
+    }
+    out.push(
+      `</tbody></table><p class="note">One row per issue (a section of the findings, however many scenarios and explanations name it); the number after # is the section in ${he(calculator().findings)}. ✓ the numbers fit the explanation; ✗ they don't (diagnose again); – no numeric check; stale: the evidence changed since it was written. Expand an explanation to read it; the first covers the most results.</p>`,
+    );
   } else out.push(`<p>${he(C)} matches GEETA in every scenario it covers.</p>`);
 
   if (errors.length)
