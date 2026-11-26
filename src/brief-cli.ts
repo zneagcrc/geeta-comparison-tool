@@ -160,8 +160,14 @@ export const buildBrief = (test: string): string => {
         if (d.optionsBy)
           for (const [parent, opts] of Object.entries(d.optionsBy)) lines.push(`- Options when ${d.dependentOn} is "${parent}" (${opts.length}): ${list(opts.map(show), MAX_OPTIONS)}`);
       }
-      // Neutral inputs are named by their catalogue symbol, or by its description (without a unit in brackets)
-      const names = new Set(p.text.split(" › ").flatMap((s) => [s, s.replace(/\s*\([^)]*\)$/, "").toLowerCase()]));
+      // Neutral inputs are named by their catalogue symbol or by its description, either with a note in brackets
+      // ("E_gijy (CH4, t/ha burnt)")
+      const names = new Set(
+        p.text.split(" › ").flatMap((s) => {
+          const bare = s.replace(/\s*\([^)]*\)$/, "");
+          return [s, bare, bare.toLowerCase()];
+        }),
+      );
       const defsInCatalogue = cat.filter(
         (e) =>
           (names.has(e.symbol) || names.has(e.description.toLowerCase())) &&

@@ -9,6 +9,7 @@ import { ENTERIC_BEEF, ENTERIC_SHEEP, MANURE_BEEF, MANURE_SHEEP } from "./module
 import { PRIMARY, SECONDARY, poultryFromVeerg, poultryToVeerg } from "./poultry";
 import { enterpriseFromVeerg, enterpriseToVeerg } from "./enterprise";
 import { SCOPE3 } from "./modules/scope3";
+import { LULUCF } from "./modules/lulucf";
 import { fieldToSpec, fromSpec as specToRelease, toSpec as releaseToSpec } from "./geeta-format";
 
 export type NeutralModule = {
@@ -91,6 +92,7 @@ const SPEC_MODULES: NeutralModule[] = [
   fromSpec(SUPPLEMENTARY_CO2, "12-supplementary-co2"),
   fromSpec(ELECTRICITY, "14-electricity"),
   fromSpec(SCOPE3, "15-scope3"),
+  fromSpec(LULUCF, "16-lulucf"),
   poultry,
   ...(
     [

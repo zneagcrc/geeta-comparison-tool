@@ -16,7 +16,18 @@ test, one file per fixture scenario, exported from the workbook test fixtures.
 | `4.3-manure-dairy` | 4.3 Dairy | `11-wastewater` | 11 Wastewater treatment |
 | `4.4-manure-sheep` | 4.4 Sheep | `12-supplementary-co2` | 12 Supplementary CO2 |
 | `4.5-manure-pigs` | 4.5 Pigs | `14-electricity` | 14 Scope 2 electricity |
-|  |  | `15-scope3` | 15 Scope 3 (15.1-15.9, 15.12, 15.13, with chapter 8 fuel) |
+| `16-lulucf` | 16 Land use change and forestry | `15-scope3` | 15 Scope 3 (15.1-15.9, 15.12, 15.13, with chapter 8 fuel) |
+
+`16-lulucf` (`src/neutral/modules/lulucf.ts`, chapter 16 v1.1) covers:
+
+- planting and clearing records: plantings (revegetation by planting, j = 4), land clearing (j = 1-3) of plantings and
+  of other vegetation, and the wildfires, planned burns and growth pauses in a planting;
+- the FullCAM results the workbook takes for 16.2 (woody carbon stock `a_ijy`, `C_tijy`, `C_dijy` and their `prev`
+  year; biomass burning `a_gijy`, `E_gijy`; harvested wood products `a_ij67y`, `C_pij67y`; the clearing emissions
+  allocation; SOC loss from clearing `a_ij13y`, with the site's `IBRA7 region r`);
+- the SavCAM results for 16.5 (`DeltaC_HRZiy`, `DeltaC_LRZiy`, `E_HRZiy`, `E_LRZiy`);
+- perennial woody crops for 16.6: crop type `c`, plantings (`A_ct`) and clearing (`AC_c`), and the Method 2
+  `ActualStemDensity` or `BAM_c`.
 
 ### Enterprises
 
@@ -26,12 +37,10 @@ test, one file per fixture scenario, exported from the workbook test fixtures.
 | `enterprise-cropping-grains`, `enterprise-cropping-cotton`, `enterprise-environmental-plantings` | Enterprise: Grains, Cotton, Environmental plantings |
 
 An enterprise file is made of the module formats (`src/neutral/enterprise.ts`): one part per module under `modules`, by
-the module's section, sharing one `site`. Each workbook field belongs to exactly one part. Three formats exist for the
-enterprises only:
+the module's section, sharing one `site`. Each workbook field belongs to exactly one part. The enterprises' chapter 16
+records use the `16 Land use change and forestry` part, which also holds the plantings and clearing assigned to an
+enterprise and its products. Two formats exist for the enterprises only:
 
-- `16 Land use change and forestry` (`src/neutral/modules/lulucf.ts`): plantings (revegetation by planting, j = 4),
-  land clearing (j = 1-3) of plantings and of other vegetation, and the plantings and clearing assigned to an
-  enterprise and its products. Names from Chapter 16 v1.0.
 - `Enterprise production and allocation` (`src/neutral/modules/enterprise-production.ts`): production cycle, products
   (manure, eggs, grain, hay, cotton lint and seed, and cotton's round-module harvest), livestock sold, and the income
   shares used to allocate emissions to products. Names from the workbook's labels.

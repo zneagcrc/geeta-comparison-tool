@@ -8,7 +8,7 @@ Single-letter subscripts (`i`, `j`, `z`, ...) are scoped to each equation, as in
 mean different things in different equations. In neutral scenarios those context inputs are keyed by their
 description (e.g. "state", "wet or dry climate zone") rather than the letter.
 
-961 arguments in total, 426 marked Input, 276 distinct section/symbol pairs.
+1073 arguments in total, 495 marked Input, 313 distinct section/symbol pairs.
 
 ## Consistency checks
 
@@ -43,41 +43,40 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | 4.7 | `j` | "livestock type" [] / "production system" [] |
 | 4.7 | `z` | "location in leaching zone" [] / "wet or dry climate zone" [] |
 | 7.1 | `o` | "organic amendment type" [] / "organic amendment" [] |
-| 15.3 | `Q_m` | "total quantity of mineral supplement type m used" [kg] / "total quantity of mineral supplement type m used" [t] |
+| 16.3 | `j=1-3` | "land clearing (forest to cropland, grassland or settlements)" [] / "land clearing (forest to cropland, pasture or settlements)" [] |
 
-### Same description, different symbols (8)
+### Same description, different symbols (5)
 
 | Section | Symbol(s) | Detail |
 |---|---|---|
-| 4.1 | `MMS_jm1T3, MMS_m1T3` | "fraction of manure to tertiary anaerobic lagoon system" |
-| 4.1 | `MMS_jm5T1, MMS_m5T1` | "fraction of manure in primary system drylot mms" |
-| 4.1 | `MMS_jmT2, MMS_mT2` | "fraction of manure in each secondary system" |
 | 4.2 | `i, ir` | "irrigation method" |
 | 4.4 | `i, ir` | "irrigation method" |
 | 4.5 | `MMS_jmT2, MMSjmT2` | "fraction of manure in each secondary system" |
 | 4.6 | `MMS_jmT2, MMS_mT2` | "fraction of manure in each secondary system" |
 | 4.7 | `i, ir` | "irrigation method" |
 
-### Short symbol used for different things (across modules) (14)
+### Short symbol used for different things (across modules) (16)
 
 | Section | Symbol(s) | Detail |
 |---|---|---|
 | all | `PF` | "fraction of manure applied to soil within farm boundary" / "fraction of manure applied to soil within the farm boundary" / "fraction of manure applied to soil within the feedlot boundary" / "fraction of manure applied to soil within the piggery boundary" |
-| all | `c` | "commodity" / "crop residue type" / "crop type" / "fertiliser component" / "livestock type" |
+| all | `Q` | "quantity of fish / crustaceans produced in aquaculture ponds in coastal wetlands, summed across all species" / "quantity of supplementary co2 used within the operations" |
+| all | `c` | "commodity" / "crop residue type" / "crop type" / "fertiliser component" / "livestock type" / "perennial woody crop type" |
 | all | `f` | "freight type" / "inorganic fertiliser type" / "organic fertiliser type" |
-| all | `i` | "average temperature" / "irrigation method" / "mean annual temperature" / "region" / "state" / "wet or dry climate zone" |
+| all | `g` | "greenhouse gas" / "grid electricity was purchased from" |
+| all | `i` | "activity area" / "average temperature" / "irrigation method" / "mean annual temperature" / "region" / "state" / "wet or dry climate zone" |
 | all | `ir` | "irrigation method" / "irrigation type" |
-| all | `j` | "feed type" / "livestock type" / "production system" |
+| all | `j` | "feed type" / "land use change activity" / "livestock type" / "production system" |
 | all | `m` | "manure management system" / "metropolitan/non-metropolitan location" / "mineral supplement type" |
 | all | `o` | "organic amendment type" / "organic amendment" / "origin" |
 | all | `p` | "packaging type" / "pasture residue type" / "pasture type" / "pre-season water regime" |
-| all | `r` | "rainfall region" / "rainfall zone" |
+| all | `r` | "ibra7 region in which the land clearing took place" / "rainfall region" / "rainfall zone" |
 | all | `s` | "calving season" / "number of cropping seasons in reporting period managed this way" |
 | all | `t` | "biological treatment type" / "treatment facility type" |
 | all | `w` | "waste type" / "water regime during growing season" |
-| all | `z` | "location in leaching zone" / "rainfall zone" / "wet or dry climate zone" |
+| all | `z` | "leaching zone" / "location in leaching zone" / "rainfall zone" / "wet or dry climate zone" |
 
-### Non-standard "kind" value (17)
+### Non-standard "kind" value (15)
 
 | Section | Symbol(s) | Detail |
 |---|---|---|
@@ -91,13 +90,11 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | 6.1 | `FFOD_c` | 6.1.1.1 (2): "Input or Calculated from 6.1.1.2 (1)(2)" |
 | 6.3 | `M_cp` | 6.3.1.1 (2): "Calc from 6.1.1.1 (2) and 6.2.1.1 (2)" |
 | 10.1 | `Q_burnw` | 10.1.6 (1): "Input or calculated from 10.1.6, (2)" |
-| 11.1 | `6.784x10^(-4)` | 11.1.2 (1): "" |
 | 11.1 | `6.784x10^(-4)` | 11.1.3 (1): "" |
 | 11.1 | `6.784x10^(-4)` | 11.1.1 (1): "" |
-| 11.1 | `6.784x10^(-4)` | 11.1.2 (3): "" |
+| 11.1 | `6.784x10^(-4)` | 11.1.2 (1): "" |
 | 11.1 | `6.784x10^(-4)` | 11.1.2 (0): "" |
-| 15.7 | `Q_TPSCCq` | 15.7.1.1 (1): "input" |
-| 15.7 | `Q_TPTranstq` | 15.7.1.1 (1): "input" |
+| 11.1 | `6.784x10^(-4)` | 11.1.2 (3): "" |
 
 ## Inputs by section
 
@@ -182,12 +179,9 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | `I_j` | dry matter intake | kg DM/head/day | 4.1.1.3 (5) |
 | `I_j` | dry matter intake for each group j | kg DM/head/day | 4.1.1.1 (5) |
 | `j` | production system |  | 4.1.1.5 (1) |
-| `MMS_jm1T3` | fraction of manure to tertiary anaerobic lagoon system | fraction | 4.1.1.3 (8) |
-| `MMS_jm5T1` | fraction of manure in primary system drylot MMS | fraction | 4.1.1.3 (2) |
-| `MMS_jmT2` | fraction of manure in each secondary system | fraction | 4.1.1.3 (6) |
-| `MMS_m1T3` | fraction of manure to tertiary anaerobic lagoon system | fraction | 4.1.1.1 (4), 4.1.1.1 (4) [Method2] |
-| `MMS_m5T1` | fraction of manure in primary system drylot MMS | fraction | 4.1.1.1 (2), 4.1.1.1 (2) [Method2] |
-| `MMS_mT2` | fraction of manure in each secondary system | fraction | 4.1.1.1 (3), 4.1.1.1 (3) [Method2] |
+| `MMS_jm1T3` | fraction of manure to tertiary anaerobic lagoon system | fraction | 4.1.1.1 (4), 4.1.1.1 (4) [Method2], 4.1.1.3 (8) |
+| `MMS_jm5T1` | fraction of manure in primary system drylot MMS | fraction | 4.1.1.1 (2), 4.1.1.1 (2) [Method2], 4.1.1.3 (2) |
+| `MMS_jmT2` | fraction of manure in each secondary system | fraction | 4.1.1.1 (3), 4.1.1.1 (3) [Method2], 4.1.1.3 (6) |
 | `N_j` | number of cattle in each group | head | 4.1.1.3 (3) |
 | `N_j` | numbers of beef cattle in each group | head | 4.1.1.1 (1) |
 | `NR_j` | nitrogen retention expressed as a fraction of intake | fraction | 4.1.1.3 (4) |
@@ -211,8 +205,8 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | `ir` | irrigation method |  | 4.2.1.7 (2) |
 | `j` | production system |  | 4.2.1.5 (1), 4.2.1.7 (2) |
 | `LC_jk45` | proportion of cows greater than 1 year lactating for the season of calving and season after calving expressed as a fraction | fraction | 4.2.1.3 (5) |
-| `LC_jk5curr` | proportion of cows greater than 2 years lactating for the season of calving | fraction | 4.2.1.3 (5) [Variation] |
-| `LC_jk5prev` | proportion of cows greater than 2 years lactating for the season after calving | fraction | 4.2.1.3 (5) [Variation] |
+| `LC_jk45calv` | proportion of cows greater than 1 year lactating for the season of calving | fraction | 4.2.1.3 (5) [Variation] |
+| `LC_jk45prev` | proportion of cows greater than 1 year lactating for the season after calving | fraction | 4.2.1.3 (5) [Variation] |
 | `LWG_jkl` | liveweight gain (kg/head/day) | kg/head/day | 4.2.1.3 (4) |
 | `MAT` | Mean annual temperature | °C | 4.2.1.1 (2) [Method2] |
 | `MC_after` | milk consumption for the season after calving | kg/head/day | 4.2.1.3 (3) |
@@ -507,17 +501,21 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 |---|---|---|---|
 | `Q` | quantity of supplementary CO2 used within the operations | kg CO2 | 12.1.1.1 (1) |
 
+### 13.1
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `Q` | quantity of fish / crustaceans produced in aquaculture ponds in coastal wetlands, summed across all species | t | 13.1.1 (1) |
+
 ### 14.1 Electricity (scope 2)
 
 | Symbol | Description | Unit | Used in |
 |---|---|---|---|
 | `g` | Grid electricity was purchased from |  | 14.1.1 (1) |
 | `i` | state |  | 14.1.2 (1) |
-| `JRPP` | jurisdictional renewable power percentage for the applicable period (ACT only) | per cent | 14.1.2 (1) |
 | `Q_elec` | amount of electricity purchased from the grid | kWh | 14.1.1 (1), 14.1.2 (1) |
 | `REC_onsite` | Renewable Energy Certificates issued for electricity produced on-site during the year and consumed by the entity | MWh | 14.1.2 (1) |
 | `REC_surrendered` | Renewable Energy Certificates voluntarily surrendered in the reporting year | MWh | 14.1.2 (1) |
-| `RPP` | Renewable Power Percentage under the Large-scale Renewable Energy Target (LRET) | per cent | 14.1.2 (1) |
 
 ### 15.1 Scope 3: purchased livestock
 
@@ -539,9 +537,8 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 
 | Symbol | Description | Unit | Used in |
 |---|---|---|---|
-| `m` | mineral supplement type |  | 15.3.1.1 (1), 15.3.1.1 (1) [Variation] |
-| `Q_m` | total quantity of mineral supplement type m used | t | 15.3.1.1 (1) |
-| `Q_m` | total quantity of mineral supplement type m used | kg | 15.3.1.1 (1) [Variation] |
+| `m` | mineral supplement type |  | 15.3.1.1 (1) |
+| `Q_m` | total quantity of mineral supplement type m used | kg | 15.3.1.1 (1) |
 
 ### 15.4 Scope 3: purchased fertiliser
 
@@ -551,7 +548,7 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | `f` | inorganic fertiliser type |  | 15.4.1.1 (1), 15.4.1.1 (2) |
 | `F_cf` | percent of component c contained within the inorganic fertiliser f | percent | 15.4.1.1 (2) |
 | `j` | production system |  | 15.4.1.1 (1), 15.4.1.1 (2) |
-| `TM_jf` | quantity of inorganic fertiliser type f purchased and applied to production system j | kg | 15.4.1.1 (1), 15.4.1.1 (2) |
+| `Q_f` | quantity of inorganic fertiliser type f purchased | kg | 15.4.1.1 (1), 15.4.1.1 (2) |
 
 ### 15.5 Scope 3: purchased agrichemicals
 
@@ -570,10 +567,10 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 
 | Symbol | Description | Unit | Used in |
 |---|---|---|---|
-| `i` | State |  | 15.7.1.1 (1) [Variation] |
-| `m` | metropolitan/non-metropolitan location |  | 15.7.1.1 (1) [Variation] |
-| `Q_TPSCCq` | amount of fuel type q used for stationary combustion operations by the third-party | kL, m3 or t | 15.7.1.1 (1), 15.7.1.1 (1) [Variation] |
-| `Q_TPTranstq` | amount of fuel type q combusted in each transport type t by the third-party | kL or m3 | 15.7.1.1 (1), 15.7.1.1 (1) [Variation] |
+| `i` | State |  | 15.7.1.1 (1) |
+| `m` | metropolitan/non-metropolitan location |  | 15.7.1.1 (1) |
+| `Q_TPSCCq` | amount of fuel type q used for stationary combustion operations by the third-party | kL, m3 or t | 15.7.1.1 (1) |
+| `Q_TPTranstq` | amount of fuel type q combusted in each transport type t by the third-party | kL or m3 | 15.7.1.1 (1) |
 
 ### 15.8 Scope 3: purchased packaging
 
@@ -624,3 +621,70 @@ description (e.g. "state", "wet or dry climate zone") rather than the letter.
 | `D_f` | total distance transported per freight type f | km | 15.13.1.1 (1) |
 | `f` | freight type |  | 15.13.1.1 (1) |
 | `W_f` | total mass of goods transported per freight type f | t | 15.13.1.1 (1) |
+
+### 16.2
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `a_gijy` | Area burnt for a greenhouse gas (g) in the activity area (i) during the year (y) for a land use activity (j) | ha | 16.2.1.4 (1) |
+| `a_ij13y` | Land area of the ith activity area | ha | 16.2.1.5 (2) |
+| `a_ij67y` | area of the activity area for (i) for the activity (j) for the estimation year (y) | ha | 16.2.1.7 (1) |
+| `a_ijy` | area of the activity area for (i) for the activity (j) | ha | 16.2.1.2 (2) |
+| `C_dijy` | carbon mass in debris for the activity area (i) determined using FullCAM for the estimation year (y) for the activity (j) | t C/ha | 16.2.1.2 (4) |
+| `C_dijyprev` | carbon mass in debris for the activity area (i) determined using FullCAM for the year before y for the activity (j) | t C/ha | 16.2.1.2 (4) |
+| `C_pij67y` | carbon mass in forest products for the farm or plantation forestry (j=6-7) for the activity area (i) for the estimation year (y) | t C/ha | 16.2.1.7 (1) |
+| `C_tijy` | carbon mass in trees for the activity area (i) determined using FullCAM for the estimation year (y) for the activity (j) | t C/ha | 16.2.1.2 (3) |
+| `C_tijyprev` | carbon mass in trees for the activity area (i) determined using FullCAM for the year before y for the activity (j) | t C/ha | 16.2.1.2 (3) |
+| `E_gijy` | Mass of greenhouse gas (g) emitted due to biomass burning in the activity area (i) for the year (y) for a land use activity (j) | t/ha | 16.2.1.4 (1) |
+| `g` | Greenhouse gas |  | 16.2.1.4 (1) |
+| `i` | Activity area |  | 16.2.1.2 (2), 16.2.1.2 (3), 16.2.1.2 (4), 16.2.1.4 (1), 16.2.1.5 (2), 16.2.1.7 (1) |
+| `j` | Land use change activity |  | 16.2.1.2 (2), 16.2.1.2 (3), 16.2.1.2 (4), 16.2.1.4 (1) |
+| `j=1-3` | Land clearing (forest to cropland, grassland or settlements) |  | 16.2.1.5 (2) |
+| `j=6-7` | Farm forestry or plantation forestry |  | 16.2.1.7 (1) |
+| `r` | IBRA7 region in which the land clearing took place |  | 16.2.1.5 (2) |
+| `y` | Year for which emissions and removals are being calculated |  | 16.2.1.2 (1), 16.2.1.2 (2), 16.2.1.2 (3), 16.2.1.2 (4), 16.2.1.4 (1), 16.2.1.5 (2), 16.2.1.7 (1) |
+
+### 16.3
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `i` | Activity area |  | 16.3.1.1 (1), 16.3.1.1 (1) [Variation], 16.3.1.1 (2) |
+| `j=1` | Land clearing (forest to cropland) |  | 16.3.1.1 (1) |
+| `j=1-3` | Land clearing (forest to cropland, grassland or settlements) |  | 16.3.1.1 (2) |
+| `j=1-3` | Land clearing (forest to cropland, pasture or settlements) |  | 16.3.1.1 (1) [Variation] |
+| `j=2-3` | Land clearing (forest to grassland or settlements) |  | 16.3.1.1 (1) |
+| `y` | Year for which emissions and removals are being calculated |  | 16.3.1.1 (1), 16.3.1.1 (1) [Variation], 16.3.1.1 (2) |
+| `z` | rainfall zone |  | 16.3.1.1 (1), 16.3.1.1 (1) [Variation] |
+
+### 16.4
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `y` | Year for which emissions and removals are being calculated |  | 16.4.1.1 (1) |
+| `z` | leaching zone |  | 16.4.1.1 (1) |
+
+### 16.5
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `DeltaC_HRZiy` | Change in carbon stock in the High Rainfall Zone for the activity area (i) for the year (y), from the SavCAM abatement report | t CO2-e | 16.5.1.2 (2) |
+| `DeltaC_LRZiy` | Change in carbon stock in the Low Rainfall Zone for the activity area (i) for the year (y), from the SavCAM abatement report | t CO2-e | 16.5.1.2 (2) |
+| `E_HRZiy` | Emissions from biomass burning in the High Rainfall Zone for the activity area (i) for the year (y), from the SavCAM abatement report | t CO2-e | 16.5.1.4 (1) |
+| `E_LRZiy` | Emissions from biomass burning in the Low Rainfall Zone for the activity area (i) for the year (y), from the SavCAM abatement report | t CO2-e | 16.5.1.4 (1) |
+| `i` | Activity area |  | 16.5.1.2 (1), 16.5.1.2 (2), 16.5.1.4 (1) |
+| `y` | Year for which emissions and removals are being calculated |  | 16.5.1.2 (1), 16.5.1.2 (2), 16.5.1.4 (1) |
+
+### 16.6
+
+| Symbol | Description | Unit | Used in |
+|---|---|---|---|
+| `A_ct` | area of crop type c planted t years ago | ha | 16.6.1.1 (1), 16.6.1.1 (1) [Method2] |
+| `AC_c` | area of crop type c cleared in the reporting period | ha | 16.6.1.3 (1), 16.6.1.3 (1) [Method2] |
+| `ActualStemDensity` | actual stem density of crop type c | trees/ha | 16.6.1.2 (1) |
+| `BAM_c` | biomass stock at maturity for crop type c, from on-site field measurement | t C/ha | 16.6.1.2 (2) |
+| `BAM_c preference` | Method of estimating BAM_c |  | 16.6.1.3 (1) [Method2] |
+| `BAR_c_option` | Method of estimating BAR_c |  | 16.6.1.1 (1) [Method2] |
+| `c` | Perennial woody crop type |  | 16.6.1.1 (1), 16.6.1.1 (1) [Method2], 16.6.1.2 (1), 16.6.1.2 (2), 16.6.1.3 (1), 16.6.1.3 (1) [Method2], 16.6.1.4 (1) |
+| `Directly measured BAM` | BAM_c obtained from direct measurements | t C/ha | 16.6.1.3 (1) [Method2] |
+| `t_clearingc` | tree crop age at time of clearing, which must be less than m_c | years | 16.6.1.4 (1) |
+| `t_ct` | years since planting for each area A_ct | years | 16.6.1.1 (1), 16.6.1.1 (1) [Method2] |
