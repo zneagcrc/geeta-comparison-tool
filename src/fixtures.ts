@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { TEST_DIR, requireTestSet } from "./geeta-source";
+import { BLOCK, type GeetaInternal, geetaInternalOf, geetaInternalProblems } from "./geeta-internal";
 
 export { TEST_DIR };
 
@@ -43,16 +44,33 @@ export const mergeScenario = (base: any, over: any) => {
   return merged;
 };
 
-export type TestCase = { name: string | undefined; input: any; expected: Record<string, number | string> };
+export type TestCase = {
+  name: string | undefined;
+  input: any;
+  expected: Record<string, number | string>;
+  /** What the results file's GeetaInternalResults block marks internal for this scenario (geeta-internal.ts). */
+  internal: GeetaInternal;
+};
 
-/** Returns [{ name, input, expected }] for a test, resolving scenario files and ScenarioExtends chains. */
+// Each results file's GeetaInternalResults problems are reported once per process
+const warnedFiles = new Set<string>();
+
+/** Returns [{ name, input, expected, internal }] for a test, resolving scenario files and ScenarioExtends chains. */
 export const loadCases = (test: any): TestCase[] => {
   const input = readJson(test.TestInputFile);
   const results = readJson(test.TestResultsFile);
+  if (!warnedFiles.has(test.TestResultsFile)) {
+    warnedFiles.add(test.TestResultsFile);
+    for (const p of geetaInternalProblems(results)) console.warn(`${path.basename(test.TestResultsFile)}: ${BLOCK} ${p}`);
+  }
   const dir = path.dirname(test.TestInputFile);
   const scenarios: any[] =
     input.Scenarios ?? input.ScenarioFiles?.map((f: string) => readJson(path.join(dir, f)));
-  if (!scenarios) return [{ name: undefined, input, expected: results }];
+  if (!scenarios) {
+    // (a flat results file carries the block beside its results)
+    const { [BLOCK]: _block, ...expected } = results;
+    return [{ name: undefined, input, expected, internal: geetaInternalOf(results, undefined) }];
+  }
 
   const byName = new Map(scenarios.map((s) => [s.ScenarioName, s]));
   const resolve = (s: any, seen = new Set<string>()): any => {
@@ -66,6 +84,6 @@ export const loadCases = (test: any): TestCase[] => {
   return scenarios.map((s) => {
     // NIRResults holds National Inventory Report values for the docs; they aren't GEETA results
     const { ScenarioName, NIRResults, ...expected } = (expectedByName.get(s.ScenarioName) ?? {}) as any;
-    return { name: s.ScenarioName as string, input: resolve(s), expected };
+    return { name: s.ScenarioName as string, input: resolve(s), expected, internal: geetaInternalOf(results, s.ScenarioName) };
   });
 };

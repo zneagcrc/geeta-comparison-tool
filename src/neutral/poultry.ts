@@ -2,6 +2,7 @@
 // fixture format. Input names are the catalogue symbols (catalogue/veerg-inputs.md, 4.6); class and system names
 // are verbatim from the 4.6 subscript table in the (pre-release) chapter 4 text.
 import { type Site, siteFromVeerg, siteToVeerg } from "./site";
+import { findTest, loadCases } from "../fixtures";
 
 /** Poultry class j / subclass k, as the 4.6 subscript table names them. */
 export const CLASSES = {
@@ -61,8 +62,16 @@ export interface PoultryScenario {
     MMS_jmT1: ByClass<Partial<Record<PrimaryMMS, number>>>;
     /** fraction of manure in each secondary system, per primary system */
     MMS_jmT2: ByClass<Routes<number>>;
-    /** fraction of manure applied to soil within the farm boundary: one value, or per primary -> secondary route */
-    PF: number | Routes<number>;
+    /**
+     * fraction of manure applied to soil within the farm boundary: one value, or per primary -> secondary route. Only in
+     * releases with the destination tables (VEERG_0.0.0.6 and before).
+     */
+    PF?: number | Routes<number>;
+    /**
+     * GEETA's working files after VEERG_0.0.0.6, in place of PF and the destination tables: the fraction of manure removed
+     * from the system (PF = 1 - it; blank: none removed), as recorded, as the feedlot, dairy and pig scenarios hold it.
+     */
+    "fraction of manure removed from the system"?: number;
   };
   /** Front-end conveniences of the workbook that aren't methodology inputs (kept so conversion is lossless). */
   workbook?: {
@@ -70,7 +79,11 @@ export interface PoultryScenario {
     "reporting entity name"?: string;
     /** Free range / Barn / Cage */
     "poultry production system"?: string;
-    /** Where manure from each route goes; PF = "Fert for own farm" + "Direct application to soil" */
+    /**
+     * Where manure from each route goes; PF = "Fert for own farm" + "Direct application to soil". Only in releases with
+     * the destination tables: GEETA's working files after VEERG_0.0.0.6 take the fraction of manure removed from the
+     * system instead (PF = 1 - that fraction), and the scenario then has no "manure destinations".
+     */
     "manure destinations"?: Routes<{ Sold: number; "Fert for own farm": number; "Direct application to soil": number }>;
   };
 }
@@ -122,6 +135,10 @@ export const poultryFromVeerg = (input: any): PoultryScenario => {
     return routes;
   });
 
+  // From the working files after VEERG_0.0.0.6: one fraction of manure removed from the system (PF = 1 - it), as recorded
+  const removed = input.X_Cell_Poultry_FractionManureRemoved;
+  const hasDestinations = (input.InputTables ?? []).some((t: any) => /^X_Table_Poultry_Stage2MMS_[A-Za-z]+_Destinations$/.test(t.TableName));
+
   // PF and destinations for the routes manure actually takes
   const destinations: NonNullable<PoultryScenario["workbook"]>["manure destinations"] = {};
   const pf: Routes<number> = {};
@@ -139,7 +156,14 @@ export const poultryFromVeerg = (input: any): PoultryScenario => {
     }
   }
   const pfValues = Object.values(pf).flatMap((r) => Object.values(r ?? {}));
-  const PF = pfValues.length === 0 ? 1 : pfValues.every((v) => v === pfValues[0]) ? pfValues[0] : pf;
+  // Without destination tables: the fraction removed, as recorded (no PF)
+  const PF = !hasDestinations
+    ? undefined
+    : pfValues.length === 0
+        ? 1
+        : pfValues.every((v) => v === pfValues[0])
+          ? pfValues[0]
+          : pf;
 
   return {
     section: "4.6 Poultry",
@@ -159,18 +183,34 @@ export const poultryFromVeerg = (input: any): PoultryScenario => {
       CP_jk: byClass(dietValue("CrudeProtein")),
       MMS_jmT1,
       MMS_jmT2,
-      PF,
+      ...(PF !== undefined ? { PF } : {}),
+      ...(!hasDestinations && removed !== undefined && removed !== "" ? { "fraction of manure removed from the system": removed } : {}),
     },
     workbook: {
       "farm name": input.X_Cell_Site_FarmName,
       "reporting entity name": input.X_Cell_Site_ReportingEntityName,
       "poultry production system": input.X_Cell_Poultry_ProductionSystem,
-      "manure destinations": destinations,
+      ...(hasDestinations ? { "manure destinations": destinations } : {}),
     },
   };
 };
 
 // ---------- neutral -> workbook fixture
+
+/**
+ * Whether the GEETA test set in use takes the fraction of manure removed (its first poultry scenario has the cell)
+ * rather than the destination tables: how a scenario with no destinations of its own is written.
+ */
+let takesRemoved: boolean | undefined;
+const sourceTakesRemoved = () => {
+  if (takesRemoved === undefined)
+    try {
+      takesRemoved = "X_Cell_Poultry_FractionManureRemoved" in (loadCases(findTest("ManureManagement.Poultry"))[0]?.input ?? {});
+    } catch {
+      takesRemoved = false;
+    }
+  return takesRemoved;
+};
 
 const META = { MatrixType: "ColsToRows", ColumnOffset: null, RowOffset: null };
 
@@ -182,7 +222,7 @@ export const poultryToVeerg = (s: PoultryScenario) => {
   const { inputs, workbook = {} } = s;
   const allClasses = Object.keys(CLASSES) as PoultryClass[];
   const cols = (f: (c: PoultryClass) => Record<string, unknown>) => Object.fromEntries(allClasses.map((c) => [CLASSES[c].veerg, f(c)]));
-  const pfFor = (m1: Housed, m2: SecondaryMMS) => (typeof inputs.PF === "number" ? inputs.PF : (inputs.PF[m1]?.[m2] ?? 1));
+  const pfFor = (m1: Housed, m2: SecondaryMMS) => (typeof inputs.PF === "number" ? inputs.PF : (inputs.PF?.[m1]?.[m2] ?? 1));
   const split = (m1: Housed, m2: SecondaryMMS) => {
     const given = workbook["manure destinations"]?.[m1]?.[m2];
     if (given) return given;
@@ -190,6 +230,12 @@ export const poultryToVeerg = (s: PoultryScenario) => {
     return { Sold: round(1 - pf), "Fert for own farm": 0, "Direct application to soil": pf };
   };
   const listed = (Object.keys(SECONDARY) as SecondaryMMS[]).filter((m) => m !== "13 = Direct application to soils");
+  // A scenario from a release without the destination tables: the fraction of manure removed instead (a scenario
+  // written by hand with one PF number and no destinations is written the same way, when the test set takes it)
+  const removedGiven = inputs["fraction of manure removed from the system"];
+  const removedOnly = workbook["manure destinations"] === undefined
+    && (removedGiven !== undefined || (inputs.PF === undefined || typeof inputs.PF === "number") && sourceTakesRemoved());
+  const removed = removedGiven ?? (typeof inputs.PF === "number" && inputs.PF < 1 ? round(1 - inputs.PF) : undefined);
   const dietClasses = allClasses.filter((c) => [inputs.I_jk, inputs.DMD_jk, inputs.CP_jk].some((t) => t?.[c] !== undefined));
 
   return {
@@ -202,6 +248,8 @@ export const poultryToVeerg = (s: PoultryScenario) => {
     X_Cell_Poultry_ProductionSystem: workbook["poultry production system"] ?? "",
     X_Cell_Poultry_ManureAppliedProductionSystem: inputs["production system"],
     X_Cell_Poultry_ManureAppliedIrrigationMethod: inputs["irrigation method"],
+    // Blank is none removed, so the cell is written only when the scenario gives it
+    ...(removedOnly && removed !== undefined ? { X_Cell_Poultry_FractionManureRemoved: removed } : {}),
     InputTables: [
       { TableName: "X_Table_Poultry_Movement", ...META, Cols: cols((c) => ({ Duration: inputs.D_jk[c] ?? 0, Head: inputs.N_jk[c] ?? 0 })) },
       ...(dietClasses.length
@@ -225,7 +273,7 @@ export const poultryToVeerg = (s: PoultryScenario) => {
         ...META,
         Cols: cols((c) => Object.fromEntries(listed.map((m2) => [SECONDARY[m2].veerg, percent(inputs.MMS_jmT2[c]?.[m1]?.[m2])]))),
       })),
-      ...HOUSED.map((m1) => ({
+      ...(removedOnly ? [] : HOUSED).map((m1) => ({
         TableName: `X_Table_Poultry_Stage2MMS_${PRIMARY[m1].veerg}_Destinations`,
         ...META,
         Cols: Object.fromEntries(

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { findTest, loadCases } from "./fixtures";
 import { isExcluded } from "./comparison-config";
+import { internalReason } from "./geeta-internal";
 import { MODULES, moduleFor } from "./neutral/registry";
 import { traceGeetaSide, type MappingRow } from "./docs/mapping";
 import { GEETA, INPUT_FIELDS_DIR, TEST_DIR, geetaLabel, inputFieldsBaseName, requireTestSet } from "./geeta-source";
@@ -182,9 +183,18 @@ export const buildBrief = (test: string): string => {
 
   // Result names, as `geeta-compare names` lists them
   const count = new Map<string, number>();
-  for (const c of cases) for (const k of Object.keys(c.expected ?? {})) count.set(k, (count.get(k) ?? 0) + 1);
+  // GEETA-internal results (geeta-internal.ts): only GEETA uses them, so a run doesn't compare them by default
+  const internal = new Map<string, string>();
+  for (const c of cases) {
+    for (const k of Object.keys(c.expected ?? {})) count.set(k, (count.get(k) ?? 0) + 1);
+    for (const k of Object.keys(c.expected ?? {})) {
+      const reason = internalReason(c.internal, k);
+      if (reason) internal.set(k, reason);
+    }
+  }
   lines.push("## Results", "", `${count.size} result names (the adapter returns each under this name, in GEETA's units):`, "");
-  for (const [k, n] of count) lines.push(`- \`${k}\`${n < cases.length ? ` (in ${n} of ${cases.length} scenarios)` : ""}`);
+  for (const [k, n] of count)
+    lines.push(`- \`${k}\`${n < cases.length ? ` (in ${n} of ${cases.length} scenarios)` : ""}${internal.has(k) ? ` (GEETA internal: ${internal.get(k)}; not compared unless the run asks)` : ""}`);
   lines.push(
     "",
     "## Where else to look",

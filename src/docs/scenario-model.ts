@@ -15,6 +15,7 @@ import { moduleFor } from "../neutral/registry";
 import { type Mapping, progress, scenarioMapping, traceStats, worker } from "./mapping";
 import { isExcluded } from "../comparison-config";
 import { defaultOnly } from "../scenario-scope";
+import { type GeetaInternal, BLOCK, geetaInternalOf, internalReason, leftOut } from "../geeta-internal";
 import { calculator } from "../calculators";
 import { type InputCall, comparedResults } from "../calculators/types";
 import { type DecisionUse, decisionNotes, decisionUses, resetDecisionUses } from "../mapping";
@@ -23,7 +24,7 @@ const { adapters, calculateAndCaptureInputs, name: calculatorName } = calculator
 
 
 /** Scenario keys that aren't inputs or results. */
-const META = new Set(["Scenarios", "ScenarioFiles", "ScenarioName", "ScenarioDescription", "ScenarioNotes", "ScenarioExtends", "FollowOnTests", "__FormulaOverwritePolicy", "InputTables", "NIRResults"]);
+const META = new Set(["Scenarios", "ScenarioFiles", "ScenarioName", "ScenarioDescription", "ScenarioNotes", "ScenarioExtends", "FollowOnTests", "__FormulaOverwritePolicy", "InputTables", "NIRResults", BLOCK]);
 
 // Same tolerance as src/run-veerg-tests.ts
 const REL_TOL = 1e-6;
@@ -185,8 +186,13 @@ export type InputTable = { title: string; replace: boolean; headers: string[]; r
 export type InputGroup = { title: string; cells: CellRow[]; tables: InputTable[] };
 export type ResultRow = {
   name: string;
-  /** Whether the calculator is compared on this result (a partial, enterprise, adapter covers only the modules it maps). */
+  /**
+   * Whether the calculator is compared on this result: a partial (enterprise) adapter covers only the modules it maps,
+   * and a GEETA-internal result is compared only when the run compares them (geeta-internal.ts).
+   */
   compared: boolean;
+  /** Why GEETA marks this result internal (its GeetaInternalResults block); undefined when it isn't. */
+  internal?: string;
   nir: Value;
   geeta: Value;
   calc: Value;
@@ -211,6 +217,8 @@ export type ScenarioPage = {
   description?: string;
   extends?: string;
   notes: string[];
+  /** Why GEETA marks the whole scenario internal; undefined when it doesn't. */
+  internal?: string;
   inputs: InputGroup[];
   /** The scenario in the neutral format (src/neutral), or why it couldn't be converted. */
   neutral?: { value?: unknown; error?: string };
@@ -313,6 +321,7 @@ const resultRows = (
   test: string,
   scenario: string | undefined,
   input: unknown,
+  internal: GeetaInternal,
 ): ResultRow[] => {
   const geeta = Object.fromEntries(Object.entries(expected ?? {}).filter(([k]) => !META.has(k)));
   // Same diagnosis as the runner (same comparison, findings, stored explanations and fingerprints)
@@ -325,16 +334,19 @@ const resultRows = (
     const g = geeta[k];
     const has = (o: Record<string, unknown> | undefined) => !!o && k in o && !isEmpty(o[k]);
     const d = diagnosis?.results[k];
-    const calcDiffers = !!d?.differs;
+    // A GEETA-internal result this run doesn't compare is shown, but not compared, counted or explained
+    const out = leftOut(internal, k);
+    const calcDiffers = !!d?.differs && !out;
     return {
       name: humanizeResult(k),
-      compared: k in compared,
+      compared: k in compared && !out,
+      ...(internalReason(internal, k) ? { internal: internalReason(internal, k) } : {}),
       nir: { value: nir[k], changed: !!parentExpected && display(parentExpected.NIRResults?.[k]) !== display(nir[k]) && has(nir) },
       geeta: { value: g, changed: !!parentGeeta && display(parentGeeta[k]) !== display(g) },
       calc: { value: calc?.[k] },
       nirDiffers: has(nir) && k in geeta && !close(nir[k], g),
       calcDiffers,
-      findings: d?.findings ?? [],
+      findings: out ? [] : (d?.findings ?? []),
       ...(calcDiffers ? { record: d!.record, check: d!.check, review: d!.review } : {}),
     };
   });
@@ -451,6 +463,7 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
           neutral = { error: String(error?.message ?? error).slice(0, 500) };
         }
       const title = name === undefined ? (scenarios ? "(first, unnamed)" : "(no scenarios)") : formatScenarioTitle(name);
+      const internal = geetaInternalOf(resultsObj, name);
       return {
         name,
         title,
@@ -459,11 +472,12 @@ export const buildModel = (opts: PlanOptions = {}): TestModel[] => {
         description: raw?.ScenarioDescription?.trim() || undefined,
         extends: parent ? formatScenarioTitle(parent) : undefined,
         notes: notesOf(raw),
+        ...(internal.scenario ? { internal: internal.reason ?? "no reason given" } : {}),
         inputs: inputGroups(input, parent ? basis(select(scenarios, inputObj, parent)) : undefined, labels),
         neutral,
         mapping: neutralModule && neutral?.value !== undefined ? scenarioMapping(neutralModule, neutral.value, calculator(), !!opts.trace, name === undefined ? key : `${key} › ${title} (${i + 1}/${shown.length})`) : undefined,
         calcInputs: calc.inputs,
-        results: resultRows(expected, parentExpected, calc.results, key, name, input),
+        results: resultRows(expected, parentExpected, calc.results, key, name, input, internal),
         calc: { status: calc.status, message: calc.message, notes: [...new Set(calc.notes)], decisions: calc.decisions },
         followOns: followOns(raw ?? (scenarios ? undefined : inputObj)),
       };

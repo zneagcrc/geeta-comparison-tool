@@ -1,4 +1,5 @@
 {
   "runDefaultScenariosOnly": false,
+  "compareGeetaInternal": false,
   "exclude": []
 }

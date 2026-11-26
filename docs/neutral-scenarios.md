@@ -85,6 +85,12 @@ would sit under `workbook` (`cells`, `tables`); none does now.
   template), the workbook's Method 1 lookup tables (Appendix A defaults, filled in by formulas), and columns the
   workbook calculates (marked "(calculated by the workbook)"). They are kept so conversion is lossless.
 - Poultry (the pilot) differs in one respect: its manure destinations are in `workbook` and `PF` in `inputs`.
+- **Manure removed.** GEETA's working files after VEERG_0.0.0.6 replace the manure destination tables of the feedlot,
+  dairy, pig and poultry manure modules (sold / fertiliser for own farm / direct application to soil, behind `PF`)
+  with one input, the fraction of manure removed from the system (`PF` = 1 - it). All four keep it as recorded,
+  `"fraction of manure removed from the system"` in `inputs` (blank: none removed), in place of `"manure destinations"`
+  (and, for poultry, of `PF` and the `workbook` destinations). A scenario has one form or the other, as its release
+  does.
 
 ## Tools
 

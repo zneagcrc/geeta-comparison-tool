@@ -77,7 +77,7 @@ npm run geeta:fetch                               # download the GEETA release p
 | File | What it is |
 |---|---|
 | `geeta.config.json` | The GEETA release to compare with, and the calculators (none yet) |
-| `comparison.config.json` | Scenarios to leave out of the comparison; `runDefaultScenariosOnly` for a quick first pass |
+| `comparison.config.json` | Scenarios to leave out of the comparison; `runDefaultScenariosOnly` for a quick first pass; `compareGeetaInternal` to compare GEETA-internal results too |
 | `CLAUDE.md` | How Claude Code explains differences in this workspace |
 | `package.json` scripts | `geeta:fetch`, `geeta:install`, `test:veerg`, `docs:scenarios`, `explain`, `llm`, `typecheck` (and Claude Code as a dev dependency) |
 | `.env.example` | The secrets the workspace can use (the LLM key, API calculators' keys): copy to `.env` |
@@ -387,6 +387,29 @@ exclusions in your findings document.
 
 `test` and `scenario` are exact names with `*` wildcards; no `scenario` excludes the whole test; `calculators` (names or
 ids) limits a rule to some calculators; `reason` is required. A rule that matches nothing is reported as a warning.
+
+## GEETA-internal results
+
+GEETA marks some results, and some whole scenarios, as used only inside GEETA, not for comparison by calculator
+providers (a TestResults file's `GeetaInternalResults` block, with a reason for each). A run leaves them out: they
+aren't compared, explained or counted, and the docs show them greyed and tagged **GEETA internal**. Your findings
+document lists them beside your exclusions.
+
+To compare them anyway:
+
+```sh
+npx geeta-compare test --geeta-internal
+npx geeta-compare docs --geeta-internal
+```
+
+or `"compareGeetaInternal": true` in `comparison.config.json` for the workspace (`--no-geeta-internal` or
+`GEETA_INTERNAL=0` turns it off for one run; `GEETA_INTERNAL=1` turns it on). `test`, `explain` and `docs` follow it.
+They're then compared and explained like any other result, but counted separately: `test` reports them on their own
+line, never in its totals or its exit code, and the docs dashboard gives them their own section. On the dashboard and
+the scenario pages, the GEETA internal Show/Hide switch hides or shows them; it starts on Show when the run compared
+them, and remembers your choice in the browser.
+
+Explanation fingerprints cover every result whatever the setting, so switching it doesn't make explanations stale.
 
 ## Default scenarios only (a quick first pass)
 

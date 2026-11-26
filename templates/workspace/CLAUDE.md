@@ -12,6 +12,9 @@ its plug-in (`calculators/<id>/index.ts`) and findings document (`findings/<id>.
   `geeta.local.json` overrides it. The first line of every run says which calculator version and test set it used.
 - Scenarios listed in `comparison.config.json` are excluded from the comparison: don't run, explain or document them,
   and don't count their results.
+- Results and scenarios GEETA marks internal (`GeetaInternalResults` in a TestResults file) are for GEETA only: they're
+  left out unless the run compares them (`--geeta-internal`, or `compareGeetaInternal` in `comparison.config.json`), and
+  even then they're counted separately. Don't change an adapter just to match one.
 - Never change a calculator's installed release (`node_modules`) to make it match: differences are explained, not
   patched. A calculator is upgraded only by changing its "version" and running `npx geeta-compare install <id>`.
 

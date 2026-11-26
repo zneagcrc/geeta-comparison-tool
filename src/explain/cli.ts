@@ -15,6 +15,7 @@ import { calculator } from "../calculators";
 import { comparedResults } from "../calculators/types";
 import { isExcluded } from "../comparison-config";
 import { inScope } from "../scenario-scope";
+import { compareGeetaInternal, internalReason, leftOut } from "../geeta-internal";
 import { DOCS_DIR, chaptersOfResults, documentFor, listDocuments } from "./documents";
 import { type DifferenceType, type ExplanationRecord, differenceTypes, loadStore, matches, saveStore, storeDir, storeFile } from "./store";
 import { GEETA, TEST_EXCEL_DIR, geetaLabel } from "../geeta-source";
@@ -39,7 +40,8 @@ const runTest = (test: string, scenarioFilter?: string) => {
   return loadCases(entry)
     // Scenarios comparison.config.json excludes aren't compared, so they aren't explained either; a default-scenarios-only
     // run (scenario-scope.ts) looks at each test's first scenario, unless one is asked for by name
-    .filter((c, i) => (scenarioFilter ? c.name === scenarioFilter : inScope(i)) && !isExcluded(test, c.name))
+    // and GEETA-internal scenarios only when this run compares GEETA-internal results (geeta-internal.ts)
+    .filter((c, i) => (scenarioFilter ? c.name === scenarioFilter : inScope(i)) && !isExcluded(test, c.name) && (!c.internal.scenario || compareGeetaInternal()))
     .map((c) => {
       const notes: string[] = [];
       const { log, warn } = console;
@@ -56,7 +58,11 @@ const runTest = (test: string, scenarioFilter?: string) => {
       }
       // A partial (enterprise) adapter is compared only on the results of the modules it maps
       const expected = comparedResults(adapter, c.expected);
-      return { ...c, expected, actual, error, notes: [...new Set(notes)], diagnosis: diagnoseCase(test, c.name, c.input, expected, actual) };
+      // Diagnosed on every result (the evidence fingerprint covers them all, whatever the setting), then the results this
+      // run leaves out (GEETA internal, not compared) dropped, so they aren't listed, explained or counted
+      const diagnosis = diagnoseCase(test, c.name, c.input, expected, actual);
+      diagnosis.results = Object.fromEntries(Object.entries(diagnosis.results).filter(([key]) => !leftOut(c.internal, key)));
+      return { ...c, expected, actual, error, notes: [...new Set(notes)], diagnosis };
     });
 };
 
@@ -72,8 +78,11 @@ const status = (only?: string) => {
   const rows: Record<string, unknown>[] = [];
   for (const test of only ? [only] : Object.keys(adapters))
     for (const c of runTest(test)) {
-      const r = Object.values(c.diagnosis.results).filter((d) => d.differs);
+      const differing = Object.entries(c.diagnosis.results).filter(([, d]) => d.differs);
+      const r = differing.map(([, d]) => d);
       if (!r.length) continue;
+      // (left out unless the run compares them: geeta-internal.ts)
+      const internal = differing.filter(([key]) => internalReason(c.internal, key)).length;
       rows.push({
         test,
         scenario: c.name ?? "",
@@ -82,6 +91,7 @@ const status = (only?: string) => {
         suspect: r.filter((d) => d.check && !d.check.ok).length,
         stale: r.filter((d) => d.review === "stale").length,
         unreviewed: r.filter((d) => d.review === "unreviewed").length,
+        ...(internal ? { "of them GEETA internal": internal } : {}),
       });
     }
   console.table(rows);
@@ -218,7 +228,7 @@ const bundle = (target: string | undefined) => {
   for (const c of cases) {
     const differing = Object.entries(c.diagnosis.results).filter(([, d]) => d.differs);
     w.push(`## Scenario: ${c.name ?? "(no scenarios)"}`, "");
-    w.push(`Evidence fingerprint: \`${c.diagnosis.fingerprint}\` · ${differing.length} of ${Object.keys(c.expected).length} results differ`, "");
+    w.push(`Evidence fingerprint: \`${c.diagnosis.fingerprint}\` · ${differing.length} of ${Object.keys(c.diagnosis.results).length} results differ`, "");
     if (c.error) w.push(`**Adapter error:** ${c.error}`, "");
     if (c.notes.length) w.push("Adapter notes:", "", ...c.notes.map((n) => `- ${n}`), "");
     if (!differing.length) {
@@ -229,7 +239,7 @@ const bundle = (target: string | undefined) => {
     for (const [key, d] of differing) {
       const n = (x: unknown) => (typeof x === "number" ? fmt(x) : x === undefined ? "—" : String(x));
       w.push(
-        `| ${key} | ${n(c.expected[key])} | ${n(c.actual[key])} | ${n(c.actual[`PROBE:${key}`])} | ${d.findings.map((f) => f.text).join("; ")} | ` +
+        `| ${key}${internalReason(c.internal, key) ? ` (GEETA internal: ${internalReason(c.internal, key)})` : ""} | ${n(c.expected[key])} | ${n(c.actual[key])} | ${n(c.actual[`PROBE:${key}`])} | ${d.findings.map((f) => f.text).join("; ")} | ` +
           `${d.record ? `${d.record.id}` : "**none**"} | ${d.check ? `${d.check.ok ? "✓" : "✗"} ${d.check.detail}` : "—"} | ${d.review ?? "—"} |`,
       );
     }

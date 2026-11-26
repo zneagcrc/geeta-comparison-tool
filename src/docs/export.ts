@@ -3,7 +3,7 @@
 // export-test-scenarios-doc.ps1 (see scenario-model.ts for what changed).
 //
 //   npx geeta-compare docs [--html <dir>] [--md <file>] [--test <TestID>] [--prefix <ScenarioPrefix>]
-//                                [--modules-only | --enterprises-only]
+//                                [--modules-only | --enterprises-only] [--default-only] [--geeta-internal]
 //
 // With neither --html nor --md, writes both to the defaults: docs/scenarios/html and docs/scenarios/TestScenarios.md.
 // --prefix NIRAlignment exports the published subset (plus the base scenarios it builds on).
@@ -15,6 +15,7 @@ import { type Landing, type Mapping, mappingCacheFile } from "./mapping";
 import { writeFindingsExclusions } from "../comparison-config";
 import { geetaLabel } from "../geeta-source";
 import { defaultOnly } from "../scenario-scope";
+import { compareGeetaInternal } from "../geeta-internal";
 import type { DecisionUse } from "../mapping";
 import { WORKSPACE } from "../workspace";
 
@@ -99,7 +100,8 @@ const isEmpty = (v: unknown) => v === null || v === undefined || (typeof v === "
 const formatResult = (v: unknown) => (typeof v === "number" ? String(Number(v.toPrecision(6))) : String(v));
 const formatInput = (v: unknown) => (typeof v === "boolean" ? String(v) : String(v));
 
-const calcCount = (pages: ScenarioPage[]) => {
+/** Counts of the main results, or of the GEETA-internal ones (counted separately: geeta-internal.ts). */
+const calcCount = (pages: ScenarioPage[], internal = false) => {
   let match = 0;
   let total = 0;
   let unexplained = 0;
@@ -108,7 +110,7 @@ const calcCount = (pages: ScenarioPage[]) => {
   let outdated = 0;
   for (const p of pages)
     for (const r of p.results)
-      if (p.calc.status === "ok" && r.compared && r.geeta.value !== undefined) {
+      if (p.calc.status === "ok" && r.compared && r.geeta.value !== undefined && !!r.internal === internal) {
         total++;
         if (!r.calcDiffers) match++;
         else if (!r.record) unexplained++;
@@ -306,6 +308,14 @@ table.issues .n{font-size:var(--font-size-fine);color:var(--text-secondary)}
 .chip .mark.stale{color:var(--earth-red)}
 .chip.suspect{background:var(--status-error-surface);outline:1px solid var(--status-error)}
 .chip .mark.none{color:var(--neutral-mid-light)}
+/* GEETA-internal results and scenarios (geeta-internal.ts): tagged, and hidden with the Show/Hide switch */
+body.hide-internal .geeta-internal{display:none}
+.internal-switch{margin:.2rem 0 .6rem;display:inline-flex;align-items:center;gap:.5rem;font-size:var(--font-size-small);color:var(--text-secondary)}
+.internal-tag{display:inline-block;font-size:var(--font-size-fine);background:var(--fleece-white);color:var(--text-secondary);border-radius:3px;padding:0 5px;margin-left:.35rem;white-space:nowrap;cursor:help}
+tr.geeta-internal>td{background:var(--surface-panel)}
+td.not-compared{color:var(--neutral-mid-light)}
+.sidebar .meta .tag.internal{background:var(--fleece-white);padding:.3rem .45rem;border-radius:3px}
+section.internal-issues{margin-top:1.2rem}
 body.index h2.all{font-size:var(--font-size-heading-2);border-bottom:1px solid var(--border-section)}
 .desc{color:var(--text-secondary);font-style:italic}
 .base{color:var(--earth-red);font-size:var(--font-size-small);font-weight:700;margin-right:.3rem}
@@ -428,6 +438,19 @@ const htmlLandings = (ls: Landing[], calculatorSide: boolean, empty: string) => 
 };
 
 const FILTER_SCRIPT = `<script>(function(){var s=document.currentScript.parentNode,f=s.querySelector('.mfilter'),t=s.querySelector('table.mapping');if(!f||!t)return;f.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;f.querySelectorAll('button').forEach(function(x){x.classList.toggle('is-selected',x===b);x.setAttribute('aria-pressed',String(x===b))});var k=b.dataset.show;t.querySelectorAll('tr[data-kind]').forEach(function(r){r.hidden=k!=='all'&&r.dataset.kind!==k});t.querySelectorAll('tr.mgroup').forEach(function(g){var n=g.nextElementSibling,any=false;while(n&&!n.classList.contains('mgroup')){if(!n.hidden)any=true;n=n.nextElementSibling}g.hidden=!any})})})();</script>`;
+
+/**
+ * The GEETA-internal Show/Hide switch (a design system button group): a class on <body> hides every .geeta-internal
+ * element. On by default when the run compared GEETA-internal results; the viewer's choice is remembered in the browser.
+ */
+const internalSwitch = () =>
+  `<div class="internal-switch"><span>GEETA internal</span><div class="button-group" role="group" aria-label="GEETA internal">` +
+  `<button type="button" class="button button--secondary button-small" data-internal="show" aria-pressed="false">Show</button>` +
+  `<button type="button" class="button button--secondary button-small" data-internal="hide" aria-pressed="false">Hide</button></div></div>`;
+const INTERNAL_SCRIPT = `<script>(function(){var K='geeta-compare:internal',b=document.body,on=b.dataset.internal==='show';try{var v=localStorage.getItem(K);if(v)on=v==='show'}catch(e){}function set(x){on=x;b.classList.toggle('hide-internal',!x);document.querySelectorAll('[data-internal]').forEach(function(t){if(t.tagName!=='BUTTON')return;var sel=(t.dataset.internal==='show')===x;t.classList.toggle('is-selected',sel);t.setAttribute('aria-pressed',String(sel))})}set(on);document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('button[data-internal]');if(!t)return;set(t.dataset.internal==='show');try{localStorage.setItem(K,on?'show':'hide')}catch(x){}})})();</script>`;
+/** <body> attributes for the switch: hidden until the script runs, so a page without scripts shows everything. */
+const internalBody = () => ` data-internal="${compareGeetaInternal() ? "show" : "hide"}"`;
+const internalTag = (reason: string) => `<span class="internal-tag" title="${he(reason)}">GEETA internal</span>`;
 
 /**
  * A mapping row's group (the site, a neutral input, or for an enterprise a module's input or a workbook table) and its
@@ -698,12 +721,23 @@ ${GUTTER_SCRIPT}
 
 const htmlResults = (rows: ResultRow[], page: ScenarioPage) => {
   if (!rows.length) return `<p class="note">(no results)</p>`;
+  const internal = rows.filter((r) => r.internal).length;
+  const switchLine = internal
+    ? `${internalSwitch()}<p class="note">${internal} result${internal === 1 ? " is" : "s are"} GEETA internal (only GEETA uses ${internal === 1 ? "it" : "them"}): ${compareGeetaInternal() ? "compared, but counted separately" : "not compared"}.</p>`
+    : "";
   // The explanation and check columns only appear when something on the page differs
   const showDifference = page.calc.status === "ok" && rows.some((r) => r.calcDiffers);
   const columns = ["NIR", "GEETA", C];
-  let s = `<table class="results"><thead><tr><th>Result</th>${columns.map((c) => `<th class="col" title="${he(COLUMNS[c])}">${c}</th>`).join("")}${showDifference ? `<th title="${he(COLUMNS["Automatic findings"])}">Automatic findings</th><th title="${he(COLUMNS["LLM explanation"])}">LLM explanation</th><th title="${he(COLUMNS.Check)}">Check</th>` : ""}</tr></thead><tbody>`;
+  let s = `${switchLine}<table class="results"><thead><tr><th>Result</th>${columns.map((c) => `<th class="col" title="${he(COLUMNS[c])}">${c}</th>`).join("")}${showDifference ? `<th title="${he(COLUMNS["Automatic findings"])}">Automatic findings</th><th title="${he(COLUMNS["LLM explanation"])}">LLM explanation</th><th title="${he(COLUMNS.Check)}">Check</th>` : ""}</tr></thead><tbody>`;
   for (const r of rows) {
-    s += `<tr><td>${he(r.name)}</td>${td(r.nir, formatResult, r.nirDiffers ? ["differs"] : [])}${td(r.geeta, formatResult)}${page.calc.status === "ok" && !r.compared ? `<td class="empty" title="No module adapter mapped for this result yet">not mapped</td>` : td(page.calc.status === "ok" ? r.calc : { value: undefined }, formatResult, r.calcDiffers ? ["differs"] : [])}`;
+    // A GEETA-internal result: tagged; greyed and not compared unless the run compares them (geeta-internal.ts)
+    const notCompared = page.calc.status === "ok" && !!r.internal && !compareGeetaInternal();
+    const calcCell = notCompared
+      ? `<td class="val not-compared" title="GEETA internal: not compared (--geeta-internal compares it)">${isEmpty(r.calc.value) ? "&mdash;" : he(formatResult(r.calc.value))}</td>`
+      : page.calc.status === "ok" && !r.compared
+        ? `<td class="empty" title="No module adapter mapped for this result yet">not mapped</td>`
+        : td(page.calc.status === "ok" ? r.calc : { value: undefined }, formatResult, r.calcDiffers ? ["differs"] : []);
+    s += `<tr${r.internal ? ` class="geeta-internal"` : ""}><td>${he(r.name)}${r.internal ? internalTag(r.internal) : ""}</td>${td(r.nir, formatResult, r.nirDiffers ? ["differs"] : [])}${td(r.geeta, formatResult)}${calcCell}`;
     if (showDifference) s += htmlFindings(r) + htmlExplanation(r) + htmlCheck(r);
     s += "</tr>";
   }
@@ -718,6 +752,8 @@ const renderPage = (test: TestModel, page: ScenarioPage, prev?: { slug: string; 
   );
   h.push(`<div class="meta"><div class="scentitle">${he(page.title)}</div>`);
   if (page.isBase) h.push(`<div class="tag base">Base / reference scenario &mdash; not published; shown for the complete input set.</div>`);
+  if (page.internal)
+    h.push(`<div class="tag internal"><b>GEETA internal scenario</b> (${he(page.internal)}). ${compareGeetaInternal() ? "Compared, but counted separately." : "Its results aren't compared."}</div>`);
   if (page.description) h.push(`<div class="desc">${he(page.description)}</div>`);
   if (page.extends) h.push(`<span class="tag"><b>Extends:</b> ${he(page.extends)}</span>`);
   if (page.notes.length) h.push(`<div class="notes"><b>Notes:</b><ul>${page.notes.map((n) => `<li>${he(n)}</li>`).join("")}</ul></div>`);
@@ -779,7 +815,7 @@ const renderPage = (test: TestModel, page: ScenarioPage, prev?: { slug: string; 
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${he(test.id)} / ${he(page.title)}</title>
 ${headLinks("../")}
-</head><body class="scenario">
+</head><body class="scenario"${internalBody()}>
 ${topBar("../")}
 <div class="scenario-body">
 <aside class="sidebar">${h.join("")}</aside>
@@ -790,6 +826,7 @@ ${topBar("../")}
 </div>
 </div>
 ${GUTTER_SCRIPT}
+${INTERNAL_SCRIPT}
 </body></html>
 `;
 };
@@ -821,7 +858,8 @@ const htmlDashboard = () => {
       test: t,
       pages: t.pages
         .filter((p) => p.calc.status === "ok")
-        .map((p) => ({ page: p, differing: p.results.filter((r) => r.calcDiffers), total: p.results.filter((r) => r.geeta.value !== undefined).length }))
+        // (GEETA-internal results are counted separately, below)
+        .map((p) => ({ page: p, differing: p.results.filter((r) => r.calcDiffers && !r.internal) }))
         .filter((x) => x.differing.length),
     }))
     .filter((x) => x.pages.length);
@@ -840,11 +878,12 @@ const htmlDashboard = () => {
     },
     { match: 0, total: 0, unexplained: 0, verified: 0, suspect: 0, outdated: 0 },
   );
-  const scenarios = covered.reduce((n, t) => n + t.pages.filter((p) => p.calc.status === "ok").length, 0);
+  const scenarios = covered.reduce((n, t) => n + t.pages.filter((p) => p.calc.status === "ok" && !p.internal).length, 0);
   const failingScenarios = failing.reduce((n, f) => n + f.pages.length, 0);
 
   const tile = (value: string, label: string, off = false) => `<div class="tile${off ? " off" : ""}"><b>${value}</b><span>${label}</span></div>`;
-  const out: string[] = [`<section class="dashboard"><h2>Dashboard</h2><div class="tiles">`];
+  const anyInternal = covered.some((t) => t.pages.some((p) => p.calc.status === "ok" && p.results.some((r) => r.internal)));
+  const out: string[] = [`<section class="dashboard"><h2>Dashboard</h2>${anyInternal ? internalSwitch() : ""}<div class="tiles">`];
   out.push(tile(`${covered.length - failing.length}/${covered.length}`, "tests fully matching", failing.length > 0));
   out.push(tile(`${scenarios - failingScenarios}/${scenarios}`, "scenarios fully matching", failingScenarios > 0));
   out.push(tile(`${totals.match}/${totals.total}`, "results matching", totals.match < totals.total));
@@ -854,7 +893,8 @@ const htmlDashboard = () => {
   out.push(tile(String(totals.outdated), "explanations stale or unreviewed (evidence changed)", totals.outdated > 0));
   out.push(`</div>`);
 
-  if (failing.length) {
+  const issueTable = (groups: typeof failing, heading: string): string[] => {
+    const out: string[] = [];
     // One row per issue: a section of the findings document (every explanation record that names it, whichever
     // test or scenario it was written for), a record with no section, or the unexplained differences. Each issue is
     // listed once with the scenarios it accounts for. Marked ✓ (every check passes), ✗ (any check fails) or – (no
@@ -870,7 +910,7 @@ const htmlDashboard = () => {
       tests: Map<TestModel, Map<ScenarioPage, number>>;
     };
     const issues = new Map<string, Issue>();
-    for (const { test, pages } of failing)
+    for (const { test, pages } of groups)
       for (const { page, differing } of pages)
         for (const r of differing) {
           const key = !r.record ? "unexplained" : r.record.section ? `section ${r.record.section}` : `record ${r.record.id}`;
@@ -911,7 +951,7 @@ const htmlDashboard = () => {
     const scenarioCount = (tests: Issue["tests"]) => [...tests.values()].reduce((n, s) => n + s.size, 0);
 
     out.push(
-      `<h3>Why ${he(C)} differs from GEETA</h3><table class="failing issues"><thead><tr><th>Issue</th><th>Results</th><th>Scenarios (differing results in each)</th></tr></thead><tbody>`,
+      `<h3>${heading}</h3><table class="failing issues"><thead><tr><th>Issue</th><th>Results</th><th>Scenarios (differing results in each)</th></tr></thead><tbody>`,
     );
     for (const issue of ordered) {
       const { records, section, checked, failed, outdated } = issue;
@@ -940,7 +980,44 @@ const htmlDashboard = () => {
     out.push(
       `</tbody></table><p class="note">One row per issue (a section of the findings, however many scenarios and explanations name it); the number after # is the section in ${he(calculator().findings)}. ✓ the numbers fit the explanation; ✗ they don't (diagnose again); – no numeric check; stale: the evidence changed since it was written. Expand an explanation to read it; the first covers the most results.</p>`,
     );
-  } else out.push(`<p>${he(C)} matches GEETA in every scenario it covers.</p>`);
+    return out;
+  };
+  if (failing.length) out.push(...issueTable(failing, `Why ${he(C)} differs from GEETA`));
+  else out.push(`<p>${he(C)} matches GEETA in every scenario it covers.</p>`);
+
+  // GEETA-internal results and scenarios (geeta-internal.ts): their own section, hidden with the switch. Compared, they
+  // get their own counts and issues; otherwise only how many weren't compared.
+  if (anyInternal) {
+    const internalPages = covered.flatMap((t) => t.pages.filter((p) => p.calc.status === "ok" && p.results.some((r) => r.internal)));
+    const scenarioCount = internalPages.length;
+    const wholeScenarios = internalPages.filter((p) => p.internal).length;
+    const results = internalPages.reduce((n, p) => n + p.results.filter((r) => r.internal && r.geeta.value !== undefined).length, 0);
+    const what = `${results} result${results === 1 ? "" : "s"} in ${scenarioCount} scenario${scenarioCount === 1 ? "" : "s"}${wholeScenarios ? ` (${wholeScenarios} of them internal as a whole)` : ""}`;
+    out.push(`<section class="internal-issues geeta-internal"><h3>GEETA internal</h3>`);
+    if (compareGeetaInternal()) {
+      const c = covered.reduce(
+        (acc, t) => {
+          const n = calcCount(t.pages, true);
+          return { match: acc.match + n.match, total: acc.total + n.total, unexplained: acc.unexplained + n.unexplained };
+        },
+        { match: 0, total: 0, unexplained: 0 },
+      );
+      out.push(
+        `<p class="note">GEETA marks ${what} as used only inside GEETA (its GeetaInternalResults). This run compared them (--geeta-internal or compareGeetaInternal), counted here and not in the totals above: ${c.match}/${c.total} match, ${c.unexplained} unexplained.</p>`,
+      );
+      const internalFailing = covered
+        .map((t) => ({
+          test: t,
+          pages: t.pages.filter((p) => p.calc.status === "ok").map((p) => ({ page: p, differing: p.results.filter((r) => r.calcDiffers && r.internal) })).filter((x) => x.differing.length),
+        }))
+        .filter((x) => x.pages.length);
+      if (internalFailing.length) out.push(...issueTable(internalFailing, `Where ${he(C)} differs on GEETA-internal results`));
+    } else
+      out.push(
+        `<p class="note">GEETA marks ${what} as used only inside GEETA (its GeetaInternalResults). They weren't compared: compare them, counted separately, with --geeta-internal or "compareGeetaInternal": true in comparison.config.json.</p>`,
+      );
+    out.push(`</section>`);
+  }
 
   if (errors.length)
     out.push(
@@ -961,7 +1038,7 @@ const writeHtml = (dir: string) => {
 
   let pages = 0;
   const ix: string[] = [`<h1>VEERG test scenarios</h1>`];
-  ix.push(`<div class="sub">Generated ${generated} from ${he(geetaLabel())}. Inputs are the fully resolved scenario data. Results: NIR, GEETA and ${he(C)}${version ? ` ${he(version)}` : ""}.${prefix ? ` <b>Filtered</b> to scenarios starting ${he(prefix)}.` : ""}${defaultOnly() && !prefix ? " <b>Default scenarios only</b>: each test's first scenario (--default-only or runDefaultScenariosOnly); run docs without it for every scenario." : ""}</div>`);
+  ix.push(`<div class="sub">Generated ${generated} from ${he(geetaLabel())}. Inputs are the fully resolved scenario data. Results: NIR, GEETA and ${he(C)}${version ? ` ${he(version)}` : ""}.${prefix ? ` <b>Filtered</b> to scenarios starting ${he(prefix)}.` : ""}${defaultOnly() && !prefix ? " <b>Default scenarios only</b>: each test's first scenario (--default-only or runDefaultScenariosOnly); run docs without it for every scenario." : ""}${compareGeetaInternal() ? " <b>GEETA-internal results compared</b> (--geeta-internal or compareGeetaInternal), counted separately." : ""}</div>`);
   ix.push(htmlDashboard());
   for (const test of models) {
     const { match, total, unexplained } = calcCount(test.pages);
@@ -985,7 +1062,10 @@ const writeHtml = (dir: string) => {
       pages++;
       const base = page.isBase ? `<span class="base">[base]</span>` : "";
       const desc = page.description ? `<span class="idesc">${he(page.description)}</span>` : "";
-      ix.push(`<li>${base}<a href="${he(test.id)}/${he(page.slug)}.html">${he(page.title)}</a> ${desc}</li>`);
+      // A GEETA-internal scenario is tagged and hidden with the switch
+      ix.push(
+        `<li${page.internal ? ` class="geeta-internal"` : ""}>${base}<a href="${he(test.id)}/${he(page.slug)}.html">${he(page.title)}</a>${page.internal ? internalTag(`The whole scenario: ${page.internal}`) : ""} ${desc}</li>`,
+      );
     });
     ix.push("</ul>");
   }
@@ -996,11 +1076,12 @@ const writeHtml = (dir: string) => {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>VEERG test scenarios</title>
 ${headLinks("")}
-</head><body class="index">
+</head><body class="index"${internalBody()}>
 ${topBar("")}
 <main class="page"><div class="container-content">
 ${ix.join("\n")}
 </div></main>
+${INTERNAL_SCRIPT}
 </body></html>
 `,
   );
@@ -1135,6 +1216,7 @@ const writeMarkdown = (file: string) => {
       w("#### Results");
       w();
       if (p.calc.status !== "ok") w(`_${C}: ${md(p.calc.message)}_\n`);
+      if (p.internal) w(`_GEETA internal scenario (${md(p.internal)}). ${compareGeetaInternal() ? "Compared, but counted separately." : "Its results aren't compared."}_\n`);
       if (p.results.length) {
         const showDifference = p.calc.status === "ok" && p.results.some((r) => r.calcDiffers);
         w(`| Result | NIR | GEETA | ${C} |${showDifference ? " Automatic findings | LLM explanation | Check |" : ""}`);
@@ -1142,7 +1224,7 @@ const writeMarkdown = (file: string) => {
         const mark = (s: string, differs: boolean) => (differs && s !== "—" ? `**${s}** ≠` : s);
         for (const r of p.results)
           w(
-            `| ${md(r.name)} | ${mark(mdValue(r.nir, formatResult), r.nirDiffers)} | ${mdValue(r.geeta, formatResult)} | ${mark(p.calc.status === "ok" ? (r.compared ? mdValue(r.calc, formatResult) : "not mapped") : "—", r.calcDiffers)} |` +
+            `| ${md(r.name)}${r.internal ? " _(GEETA internal)_" : ""} | ${mark(mdValue(r.nir, formatResult), r.nirDiffers)} | ${mdValue(r.geeta, formatResult)} | ${mark(p.calc.status === "ok" ? (r.internal && !compareGeetaInternal() ? "not compared" : r.compared ? mdValue(r.calc, formatResult) : "not mapped") : "—", r.calcDiffers)} |` +
               (showDifference ? ` ${md(findingsText(r))} | ${md(differenceText(r))} | ${md(checkText(r))} |` : ""),
           );
         w();

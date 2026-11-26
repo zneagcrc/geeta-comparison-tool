@@ -3,6 +3,8 @@
 // and 4 subscript tables write them (30 Sep 2026); feedlot groups as Appendix A Table A.1.1.3 names the feedlot types.
 // Method 1 default tables that the workbook fills in from Appendix A go in the `workbook` block; the manure
 // destinations (sold / fertiliser for own farm / direct application to soil) behind PF are activity data, in `inputs`.
+// GEETA's working files after VEERG_0.0.0.6 replace the destination tables with one input, the fraction of manure
+// removed from the system (PF = 1 - it), kept as recorded: `removedFraction` below. A scenario has one or the other.
 import { type CellSpec, type ColTableSpec, type FieldSpec, type ModuleSpec, SITE_CELLS } from "../engine";
 
 const COLS = { MatrixType: "ColsToRows", ColumnOffset: null, RowOffset: null };
@@ -18,6 +20,9 @@ export const MMS = {
   PitStorage: "9 = Pit storage (<1 month)",
   DirectApplication: "13 = Direct application",
 } as const;
+
+/** The fraction of manure removed from the system (PF = 1 - it), in place of the destination tables. */
+const removedFraction = (animal: string): CellSpec => ({ cell: `X_Cell_${animal}_FractionManureRemoved`, place: "inputs", key: "fraction of manure removed from the system" });
 
 /** Where manure from a system goes (the workbook's destination split behind PF). */
 const destinations = (ownFarmColumn: string) => ({ Sold: "sold", [ownFarmColumn]: "fertiliser for own farm", DirectApplication: "direct application to soil" });
@@ -74,6 +79,7 @@ export const MANURE_FEEDLOT: ModuleSpec = {
     ...SITE_CELLS,
     { cell: "X_Cell_Feedlot_GrazingProductionSystem", place: "inputs", key: "production system j (where manure is applied)" },
     { cell: "X_Cell_Feedlot_GrazingIrrigationMethod", place: "inputs", key: "irrigation method ir" },
+    removedFraction("Feedlot"),
   ],
   tables: [
     FEEDLOT_HERD,
@@ -147,6 +153,7 @@ export const MANURE_PIGS: ModuleSpec = {
     ...SITE_CELLS,
     { cell: "X_Cell_Pigs_ManureAppliedProductionSystem", place: "inputs", key: "production system j (where manure is applied)" },
     { cell: "X_Cell_Pigs_ManureAppliedIrrigationMethod", place: "inputs", key: "irrigation method ir" },
+    removedFraction("Pigs"),
     { cell: "X_Cell_Pigs_ProductionSystem", place: "inputs", key: "housing system" },
     ...pigSeparation,
   ],
@@ -276,6 +283,7 @@ export const MANURE_DAIRY: ModuleSpec = {
     { cell: "X_Cell_Dairy_ProductionSystemTemplate", place: "workbook", key: "production system template" },
     { cell: "X_Cell_Dairy_ManureAppliedProductionSystem", place: "inputs", key: "production system j (where manure is applied)" },
     { cell: "X_Cell_Dairy_ManureAppliedIrrigationMethod", place: "inputs", key: "irrigation method ir" },
+    removedFraction("Dairy"),
     ...dairySeparation,
   ],
   tables: [

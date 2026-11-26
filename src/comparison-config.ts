@@ -10,6 +10,7 @@ import { calculator } from "./calculators";
 import { inWorkspace } from "./workspace";
 import { idOf } from "./calculators/config";
 import { findTest, loadCases } from "./fixtures";
+import { compareGeetaInternal } from "./geeta-internal";
 
 export type ExclusionRule = { test: string; scenario?: string; calculators?: string[]; reason: string };
 
@@ -60,7 +61,37 @@ export const exclusions = (tests: string[]) => {
   return { matched, unmatched };
 };
 
-const START = "<!-- exclusions:start (generated from comparison.config.json by npm run docs:scenarios; don't edit) -->";
+const START = "<!-- exclusions:start (generated from comparison.config.json and GEETA's GeetaInternalResults by npx geeta-compare docs; don't edit) -->";
+
+/**
+ * What GEETA marks internal (geeta-internal.ts) in the given tests, one row per test and reason: whole scenarios, or
+ * how many results in how many scenarios.
+ */
+export const geetaInternalSummary = (tests: string[]) => {
+  const rows: { test: string; what: string; reason: string }[] = [];
+  for (const test of tests) {
+    const entry = findTest(test);
+    if (!entry?.TestInputFile) continue;
+    const byReason = new Map<string, { results: Set<string>; scenarios: Set<string>; whole: string[] }>();
+    const of = (reason: string) => byReason.get(reason) ?? byReason.set(reason, { results: new Set(), scenarios: new Set(), whole: [] }).get(reason)!;
+    for (const c of loadCases(entry)) {
+      if (isExcluded(test, c.name)) continue;
+      if (c.internal.scenario) of(c.internal.reason ?? "").whole.push(c.name ?? "(the test)");
+      else
+        for (const [result, reason] of Object.entries(c.internal.results))
+          if (result in c.expected) {
+            of(reason).results.add(result);
+            of(reason).scenarios.add(c.name ?? "");
+          }
+    }
+    for (const [reason, g] of byReason) {
+      if (g.whole.length) rows.push({ test, what: `Scenario${g.whole.length === 1 ? "" : "s"} ${g.whole.join(", ")} (all results)`, reason });
+      if (g.results.size)
+        rows.push({ test, what: `${g.results.size} result${g.results.size === 1 ? "" : "s"} in ${g.scenarios.size} scenario${g.scenarios.size === 1 ? "" : "s"}`, reason });
+    }
+  }
+  return rows;
+};
 const END = "<!-- exclusions:end -->";
 
 /**
@@ -84,6 +115,16 @@ export const writeFindingsExclusions = (tests: string[]) => {
         ...matched.map((m) => `| ${m.test} | ${m.scenario ?? "(whole test)"} | ${m.reason} |`),
       ]
     : ["No scenarios are excluded."];
+  const internal = geetaInternalSummary(tests);
+  if (internal.length)
+    body.push(
+      "",
+      `GEETA marks these as used only inside GEETA (its GeetaInternalResults); ${compareGeetaInternal() ? "this run compared them, counted separately from the results above" : "they aren't compared"}:`,
+      "",
+      "| Test | GEETA internal | Reason |",
+      "|---|---|---|",
+      ...internal.map((r) => `| ${r.test} | ${r.what} | ${r.reason || "(none given)"} |`),
+    );
   const next = `${text.slice(0, a)}${START}\n${body.join("\n")}\n${text.slice(b)}`;
   if (next !== text) fs.writeFileSync(file, next);
 };
